@@ -80,7 +80,7 @@ app.use((req, res, next) => {
 });
 
 /* ── Health ── */
-app.get("/api/health", (_req, res) => res.json({ ok: true, service: "wwabot-api", env: env.nodeEnv }));
+app.get("/api/health", (_req, res) => res.json({ ok: true, service: "wabot-api", env: env.nodeEnv, configured: { jwt: env.hasJwt, supabase: env.hasSupabase, email: env.hasBrevo, stripe: env.hasStripe } }));
 
 /* ── API Routes ── */
 app.use("/api/auth",    authRouter);
@@ -111,6 +111,6 @@ app.use((err, _req, res, _next) => {
 });
 
 const PORT = IS_PROD ? 5000 : env.port;
-app.listen(PORT, IS_PROD ? "0.0.0.0" : "localhost", () => {
-  console.log(`✓ WwaBot API running on http://${IS_PROD ? "0.0.0.0" : "localhost"}:${PORT} [${env.nodeEnv}]`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`✓ WaBot API running on http://0.0.0.0:${PORT} [${env.nodeEnv}]`);
 });

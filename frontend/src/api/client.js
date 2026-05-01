@@ -4,11 +4,12 @@ export class ApiError extends Error {
   constructor(message, status) {
     super(message);
     this.status = status;
+    this.name = "ApiError";
   }
 }
 
 export async function apiFetch(path, options = {}) {
-  const token = localStorage.getItem("wwabot_token");
+  const token = localStorage.getItem("wabot_token");
 
   const headers = { ...(options.headers || {}) };
   if (!(options.body instanceof FormData)) {
@@ -20,7 +21,7 @@ export async function apiFetch(path, options = {}) {
   try {
     res = await fetch(`${BASE}${path}`, { ...options, headers });
   } catch {
-    throw new ApiError("Network error — please check your connection", 0);
+    throw new ApiError("Network error — is the server running?", 0);
   }
 
   if (res.status === 204) return null;

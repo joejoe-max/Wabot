@@ -1,94 +1,68 @@
 import { Link } from "react-router-dom";
 
 const FEATURES = [
-  {
-    icon: "⚡",
-    title: "Deploy in seconds",
-    desc: "Name your bot, scan the QR code, and you're live. No configuration files, no CLI tools.",
-  },
-  {
-    icon: "🔒",
-    title: "Secure by default",
-    desc: "JWT auth, email verification, bcrypt hashing, rate limiting, and Helmet headers out of the box.",
-  },
-  {
-    icon: "📊",
-    title: "Real-time dashboard",
-    desc: "Track every bot's status, review activity logs, and manage your fleet from one place.",
-  },
-  {
-    icon: "💳",
-    title: "Simple billing",
-    desc: "Start free with up to 2 bots. Upgrade to Pro for 100 bots and priority support.",
-  },
-  {
-    icon: "🌐",
-    title: "Multi-bot support",
-    desc: "Run multiple WhatsApp numbers simultaneously — each isolated and independently managed.",
-  },
-  {
-    icon: "🔔",
-    title: "Activity feed",
-    desc: "Every deployment, scan, and status change is logged so you always know what's happening.",
-  },
+  { icon: "⚡", title: "Deploy in 60 seconds", desc: "Name your bot, scan the QR code on WhatsApp, and you're live instantly. Zero configuration." },
+  { icon: "🔗", title: "Webhook events", desc: "Fire real-time HTTP webhooks to your server for every message, join, or leave event your bots receive." },
+  { icon: "🤖", title: "Auto-reply rules", desc: "Set a smart auto-reply message per bot. Perfect for lead capture, support, and out-of-office replies." },
+  { icon: "📊", title: "Live dashboard", desc: "Track message counts, bot status, activity logs, and uptime from one unified control panel." },
+  { icon: "🔑", title: "API access", desc: "Generate API keys to manage your bots programmatically. Build custom workflows and integrations." },
+  { icon: "🛡", title: "Secure by default", desc: "JWT auth, email verification, bcrypt, rate limiting, Helmet headers, and ownership checks throughout." },
+  { icon: "📋", title: "Activity feed", desc: "Every deployment, scan, disconnect, and config change is timestamped and logged per bot." },
+  { icon: "💳", title: "Simple pricing", desc: "Start free with 2 bots. Upgrade to Pro for 100 bots, priority support, and advanced features." },
 ];
 
 const TERMINAL_LINES = [
-  { ts: "10:42:01.120", text: "Starting WwaBot deployment...", cls: "" },
-  { ts: "10:42:01.340", text: "Connecting to WhatsApp servers...", cls: "t-acc" },
-  { ts: "10:42:02.100", text: "Generating QR code payload...", cls: "" },
-  { ts: "10:42:03.500", text: "✓ QR code ready — scan with WhatsApp", cls: "t-ok" },
-  { ts: "10:42:14.880", text: "✓ Phone paired successfully", cls: "t-ok" },
-  { ts: "10:42:14.900", text: "Bot 'sales-assistant' is now ACTIVE", cls: "t-ok" },
-  { ts: "10:42:14.910", text: "🤖 Listening for messages...", cls: "t-url" },
+  { ts: "10:42:01", text: "Initialising WaBot deployment...", cls: "" },
+  { ts: "10:42:01", text: "Connecting to WhatsApp servers...", cls: "t-acc" },
+  { ts: "10:42:02", text: "Generating QR payload...", cls: "" },
+  { ts: "10:42:03", text: "✓ QR code ready — scan with WhatsApp", cls: "t-ok" },
+  { ts: "10:42:14", text: "✓ Phone paired — session established", cls: "t-ok" },
+  { ts: "10:42:14", text: "Bot 'sales-assistant' is now ACTIVE", cls: "t-ok" },
+  { ts: "10:42:15", text: "Webhook URL: https://yourapp.com/hook", cls: "t-url" },
+  { ts: "10:42:15", text: "Listening for messages...", cls: "t-dim" },
 ];
 
 export default function Landing() {
   return (
     <div className="landing">
-      {/* ── Nav ── */}
       <nav className="land-nav">
         <div className="land-logo">
           <div className="land-logo-icon">🤖</div>
-          WwaBot
+          WaBot
         </div>
         <div className="land-nav-links">
           <a href="#features" className="land-nav-link">Features</a>
           <a href="#pricing"  className="land-nav-link">Pricing</a>
         </div>
         <div className="land-nav-actions">
-          <Link to="/login" className="btn btn-ghost btn-sm">Sign in</Link>
+          <Link to="/login"  className="btn btn-ghost btn-sm">Sign in</Link>
           <Link to="/signup" className="btn btn-primary btn-sm">Get started free</Link>
         </div>
       </nav>
 
-      {/* ── Hero ── */}
       <section className="hero-section">
         <div className="hero-eyebrow">
           <span>🚀</span> WhatsApp automation, simplified
         </div>
         <h1 className="hero-h1">
           Deploy WhatsApp bots<br />
-          <span className="gradient-text">faster than ever.</span>
+          <span className="accent-word">faster than ever.</span>
         </h1>
         <p className="hero-sub">
-          WwaBot is the all-in-one platform to launch, monitor, and scale your WhatsApp
-          bots. Free to start — no credit card required.
+          WaBot is the all-in-one platform to launch, monitor, and scale your WhatsApp
+          bots. Webhooks, auto-replies, and analytics included. Free to start.
         </p>
         <div className="hero-ctas">
           <Link to="/signup" className="btn btn-primary btn-xl">Get started free</Link>
-          <a href="#pricing" className="btn btn-ghost btn-xl">See plans</a>
+          <a href="#pricing"  className="btn btn-ghost btn-xl">See plans</a>
         </div>
 
-        {/* Terminal mockup */}
         <div className="terminal">
           <div className="terminal-bar">
             <div className="t-dots">
-              <span className="t-dot t-r" />
-              <span className="t-dot t-y" />
-              <span className="t-dot t-g" />
+              <span className="t-dot t-r" /><span className="t-dot t-y" /><span className="t-dot t-g" />
             </div>
-            <span className="terminal-title">wwabot — deploy</span>
+            <span className="terminal-title">wabot — deploy</span>
           </div>
           <div className="terminal-body">
             {TERMINAL_LINES.map((l, i) => (
@@ -98,21 +72,18 @@ export default function Landing() {
               </div>
             ))}
             <div className="t-row">
-              <span className="t-ts">10:42:15.000</span>
+              <span className="t-ts">10:42:16</span>
               <span className="t-msg t-dim">$ <span className="t-cursor" /></span>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ── Features ── */}
       <section className="land-section" id="features">
         <div className="land-section-header">
           <div className="section-eyebrow">Features</div>
           <h2 className="section-h2">Everything you need to ship bots</h2>
-          <p className="section-p">
-            A complete platform from signup to scale — batteries included.
-          </p>
+          <p className="section-p">A complete platform from signup to scale — batteries included.</p>
         </div>
         <div className="features-grid">
           {FEATURES.map((f) => (
@@ -125,73 +96,47 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* ── Pricing ── */}
       <section className="land-section" id="pricing">
         <div className="land-section-header">
           <div className="section-eyebrow">Pricing</div>
           <h2 className="section-h2">Simple, transparent pricing</h2>
-          <p className="section-p">Start free. Upgrade when you need more bots.</p>
+          <p className="section-p">Start free. Upgrade when you need more power.</p>
         </div>
         <div className="pricing-grid">
-          {/* Free */}
           <div className="pricing-card">
             <div>
               <div className="pricing-name">Free</div>
               <div className="pricing-price">$0</div>
-              <p className="pricing-desc" style={{ marginTop: "0.5rem" }}>
-                Everything you need to get started.
-              </p>
+              <p className="pricing-desc" style={{ marginTop: "0.5rem" }}>Everything you need to get started.</p>
             </div>
             <div className="pricing-feats">
-              {["Up to 2 bots", "Dashboard & activity feed", "QR-based deployment", "Email support"].map((f) => (
-                <div className="pricing-feat" key={f}>
-                  <span className="pricing-feat-check">✓</span> {f}
-                </div>
+              {["Up to 2 bots", "QR-based deployment", "Webhooks per bot", "Activity feed", "API access", "Email support"].map((f) => (
+                <div className="pricing-feat" key={f}><span className="pricing-feat-check">✓</span> {f}</div>
               ))}
             </div>
-            <Link to="/signup" className="btn btn-secondary w-full">
-              Start for free
-            </Link>
+            <Link to="/signup" className="btn btn-secondary w-full">Start for free</Link>
           </div>
 
-          {/* Pro */}
           <div className="pricing-card popular">
             <div className="pricing-tier-badge">Most popular</div>
             <div>
               <div className="pricing-name">Pro</div>
-              <div className="pricing-price">
-                $19<sub>/mo</sub>
-              </div>
-              <p className="pricing-desc" style={{ marginTop: "0.5rem" }}>
-                For teams and power users.
-              </p>
+              <div className="pricing-price">$19<sub>/mo</sub></div>
+              <p className="pricing-desc" style={{ marginTop: "0.5rem" }}>For teams and power users.</p>
             </div>
             <div className="pricing-feats">
-              {[
-                "Up to 100 bots",
-                "Everything in Free",
-                "Priority support",
-                "Stripe subscription billing",
-                "Early access to new features",
-              ].map((f) => (
-                <div className="pricing-feat" key={f}>
-                  <span className="pricing-feat-check">✓</span> {f}
-                </div>
+              {["Up to 100 bots", "Everything in Free", "Priority support", "Stripe billing portal", "Early access to features"].map((f) => (
+                <div className="pricing-feat" key={f}><span className="pricing-feat-check">✓</span> {f}</div>
               ))}
             </div>
-            <Link to="/signup" className="btn btn-primary w-full">
-              Get started
-            </Link>
+            <Link to="/signup" className="btn btn-primary w-full">Get started</Link>
           </div>
         </div>
       </section>
 
-      {/* ── Footer ── */}
       <footer className="land-footer">
-        <div className="land-footer-logo">
-          <span>🤖</span> WwaBot
-        </div>
-        <span>© {new Date().getFullYear()} WwaBot. All rights reserved.</span>
+        <div className="land-footer-logo"><span>🤖</span> WaBot</div>
+        <span>© {new Date().getFullYear()} WaBot. All rights reserved.</span>
         <span>Built for WhatsApp automation.</span>
       </footer>
     </div>
