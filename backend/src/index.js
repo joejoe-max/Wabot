@@ -80,8 +80,8 @@ app.use((req, res, next) => {
 app.use("/api", apiLimiter);
 
 /* ── Health ───────────────────────────────────────────────────── */
-app.get("/api/health", (_req, res) =>
-  res.json({
+function sendHealth(_req, res) {
+  return res.json({
     ok:      true,
     service: "wabot-api",
     env:     env.nodeEnv,
@@ -93,8 +93,11 @@ app.get("/api/health", (_req, res) =>
       paystack:     env.hasPaystack,
       superadmin:   env.hasSuperadmin
     }
-  })
-);
+  });
+}
+
+app.get("/health", sendHealth);
+app.get("/api/health", sendHealth);
 
 /* ── API Routes ───────────────────────────────────────────────── */
 app.use("/api/auth",    authRouter);
