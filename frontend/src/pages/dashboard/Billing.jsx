@@ -33,6 +33,7 @@ const STATUS_INFO = {
 
 export function Billing({ user, onUpgrade, upgrading, upgradeError, onManage, managing }) {
   const isPro = user?.plan_tier === "paid";
+  const canUseProFromSubscription = (status) => status === "active";
 
   const [sub,           setSub]           = useState(null);
   const [subLoading,    setSubLoading]    = useState(false);

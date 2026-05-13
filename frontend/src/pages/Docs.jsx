@@ -162,7 +162,7 @@ Authorization: Bearer wbk_YOUR_API_KEY`,
   return (
     <div style={{
       minHeight: "100vh",
-      background: "linear-gradient(180deg, #f7f1e8 0%, #fffdf8 28%, #ffffff 100%)"
+      background: "var(--bg)"
     }}>
       <div style={{
         position: "sticky",
@@ -235,8 +235,8 @@ Authorization: Bearer wbk_YOUR_API_KEY`,
         <main style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
           <section className="card" style={{
             padding: "1.5rem",
-            background: "linear-gradient(135deg, #102542 0%, #183b63 44%, #2a6f97 100%)",
-            color: "#fff",
+            background: "var(--card2)",
+            color: "var(--text)",
             overflow: "hidden"
           }}>
             <div style={{
