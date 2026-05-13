@@ -1,8 +1,9 @@
+import { Link } from "react-router-dom";
 import { StatusBadge } from "../../components/ui/Badge.jsx";
-import { EmptyState }  from "../../components/ui/EmptyState.jsx";
+import { EmptyState } from "../../components/ui/EmptyState.jsx";
 import { timeAgo, fmtNumber } from "../../utils/format.js";
 
-export function Overview({ data, onGoToBots }) {
+export function Overview({ data, onGoToBots, onResendVerification }) {
   const { user, bots, activity, stats } = data;
   const isPro = user?.plan_tier === "paid";
 
@@ -24,10 +25,29 @@ export function Overview({ data, onGoToBots }) {
         ))}
       </div>
 
-      {/* Email warning */}
+      {/* Email verification CTA */}
       {!user?.email_verified && (
-        <div className="alert alert-warning">
-          ⚠ Your email isn't verified. Check your inbox to unlock bot deployment.
+        <div className="card" style={{ background: "var(--card2)" }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: "0.85rem" }}>
+            <div style={{ fontSize: "1.2rem", flexShrink: 0 }}>⚠️</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 800, marginBottom: "0.35rem" }}>Verify your email to unlock Pro features</div>
+              <div style={{ color: "var(--text2)", fontSize: "0.875rem", lineHeight: 1.6 }}>
+                Check your inbox for the verification email. If you didn’t receive it, you can resend it from your dashboard.
+              </div>
+              <div style={{ marginTop: "0.75rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={onResendVerification}
+                >
+                  Resend verification email
+                </button>
+                <Link to="/verify" className="btn btn-secondary btn-sm" style={{ textDecoration: "none" }}>
+                  I have a token
+                </Link>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

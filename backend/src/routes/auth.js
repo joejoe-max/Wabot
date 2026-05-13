@@ -11,6 +11,15 @@ import {
 import { requireAuth } from "../middleware/auth.js";
 import { authLimiter } from "../middleware/rateLimiter.js";
 
+function generateVerificationToken() {
+  /* 64 hex chars (32 bytes) */
+  return crypto.randomBytes(32).toString("hex");
+}
+
+function sendResendThrottle(res) {
+  return res.status(429).json({ error: "Too many resend requests. Please try again in a few minutes." });
+}
+
 const router = Router();
 
 const PLAN_KEY_LIMITS = { free: 1, paid: 10 };
@@ -109,14 +118,60 @@ router.post("/signup", authLimiter, async (req, res) => {
       console.log(`[dev] Verify URL for ${normalizedEmail}: ${verifyUrl}`);
     }
 
-    return res.status(201).json({
-      message: "Account created! Check your email to verify before logging in.",
-    });
+    const responseMessage = env.hasBrevo
+      ? "Account created! Check your email to verify before logging in."
+      : "Account created! Email verification may not be available on this server right now. You can retry verification later or use the verification flow when configured.";
+    return res.status(201).json({ message: responseMessage });
   } catch (err) {
     console.error({ err }, "Signup failed");
     return res.status(500).json({
       error: err?.message || "Could not create account. Please try again.",
     });
+  }
+});
+
+/* ── POST /api/auth/resend-verification ─────────────────────── */
+router.post("/resend-verification", authLimiter, async (req, res) => {
+  try {
+    const email = normalizeEmail(String(req.body?.email ?? ""));
+    if (!isValidEmail(email)) return res.status(400).json({ error: "Please enter a valid email address." });
+
+    const { data: user } = await supabase
+      .from("users")
+      .select("id, email, email_verified")
+      .eq("email", email)
+      .maybeSingle();
+
+    if (!user) return res.status(404).json({ error: "Email not found." });
+    if (user.email_verified) return res.json({ message: "Email is already verified. You can log in." });
+
+    const verificationToken = generateVerificationToken();
+
+    const { error: updateErr } = await supabase
+      .from("users")
+      .update({ verification_token: verificationToken })
+      .eq("id", user.id);
+
+    if (updateErr) {
+      console.error({ updateErr }, "[auth/resend-verification] could not update token");
+      return res.status(500).json({ error: "Could not resend verification email. Please try again." });
+    }
+
+    if (!env.hasBrevo) {
+      return res.status(503).json({
+        error: "Email provider is not configured on this server. Please try again later."
+      });
+    }
+
+    const verifyUrl = `${env.appBaseUrl}/verify?token=${verificationToken}`;
+    await sendVerificationEmail(email, verifyUrl);
+
+    return res.json({ message: "Verification email resent. Please check your inbox." });
+  } catch (err) {
+    console.error({ err }, "[auth/resend-verification] error");
+    const msg = err?.message?.toLowerCase?.() ?? "";
+    if (msg.includes("429")) return sendResendThrottle(res);
+    return res.status(500).json({ error: "Could not resend verification email. Please try again." });
   }
 });
 
@@ -172,11 +227,8 @@ router.post("/login", authLimiter, async (req, res) => {
 
     if (!user) return res.status(401).json({ error: "Invalid email or password." });
 
-    if (!user.email_verified)
-      return res.status(403).json({
-        error: "Please verify your email before logging in. Check your inbox for the verification link.",
-      });
-
+    /* Unverified users can log in; gating is handled in the frontend.
+       We still return emailVerified=false. */
     const token = signAccessToken({ sub: user.id, email: user.email, plan: user.plan_tier });
     return res.json({
       token,
