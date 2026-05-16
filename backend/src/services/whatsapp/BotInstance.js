@@ -1020,11 +1020,26 @@ export class BotInstance {
     if (!ai.enabled || !ai.encrypted_key || this.config.plan_tier !== "paid") return false;
     if (!body?.trim()) return false;
 
-    /* ── Determine trigger mode ───────────────────────────── */
-    const triggerMode = ai.trigger_mode ?? (isGroup ? "mention" : "all");
+    /* ── Per-channel enabled checks ───────────────────────── */
+    /* ai.groups_enabled defaults to true (backward compat) unless explicitly false.
+       ai.dm_enabled     defaults to true unless explicitly false.             */
+    if (isGroup  && ai.groups_enabled === false) return false;
+    if (!isGroup && ai.dm_enabled     === false) return false;
+
+    /* ── Per-channel trigger mode ─────────────────────────── */
+    /*
+     * group_trigger_mode / dm_trigger_mode:
+     *   "all"     — respond to every message
+     *   "mention" — respond only when bot is @-tagged (group default)
+     *   "keyword" — respond only when body starts with trigger_prefix
+     *
+     * Falls back to legacy trigger_mode, then channel-appropriate default.
+     */
+    const triggerMode = isGroup
+      ? (ai.group_trigger_mode ?? ai.trigger_mode ?? "mention")
+      : (ai.dm_trigger_mode    ?? ai.trigger_mode ?? "all");
 
     if (triggerMode === "mention") {
-      /* Check if bot JID appears in the mentionedJid list */
       const botJid      = normalizeJid(this.socket?.user?.id ?? "");
       const mentioned   = Array.isArray(extra?.mentionedJid) ? extra.mentionedJid : [];
       const botMentioned = mentioned.some((m) => normalizeJid(m) === botJid
@@ -1049,8 +1064,11 @@ export class BotInstance {
         ? `\n\nProducts:\n${products.map((p) => `- ${p.name}: ₦${p.price || "?"} — ${p.description || ""}`).join("\n")}`
         : "";
 
-      const systemPrompt = ai.system_prompt
-        || `You are a helpful WhatsApp assistant for a business. Be concise and friendly. Answer in 1-3 sentences maximum.${catalog}`;
+      /* Use channel-specific system prompt when provided, fall back to shared prompt */
+      const systemPrompt =
+        (isGroup ? (ai.group_system_prompt || null) : null)
+        ?? ai.system_prompt
+        ?? `You are a helpful WhatsApp assistant for a business. Be concise and friendly. Answer in 1-3 sentences maximum.${catalog}`;
 
       const reply = await getAiCompletion({
         provider:    ai.provider,

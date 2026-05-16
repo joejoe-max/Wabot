@@ -227,18 +227,50 @@ billingRouter.post(
             }
             logger.info({ userId }, "[billing] charge.success — user upgraded to Pro");
           } else {
-            /* Renewal — reset monthly message counter */
+            /* Renewal — reset monthly message counter, refresh subscription details */
+            const renewSub = {
+              status:             "active",
+              current_period_end: periodEnd
+            };
+            /* Update subscription/customer codes if Paystack provides them on renewal */
+            if (subscriptionCode) renewSub.paystack_subscription_code = subscriptionCode;
+            if (customerCode)     renewSub.paystack_customer_code     = customerCode;
+
             await Promise.all([
               supabase.from("users").update({
                 messages_this_month:  0,
                 billing_period_start: new Date().toISOString()
               }).eq("id", userId),
-              supabase.from("subscriptions").update({
-                status:             "active",
-                current_period_end: periodEnd
-              }).eq("user_id", userId)
+              supabase.from("subscriptions").update(renewSub).eq("user_id", userId)
             ]);
             logger.info({ userId }, "[billing] charge.success — renewal, monthly counter reset");
+          }
+        }
+      }
+
+      /* ── subscription.create → store subscription code ────── */
+      /* Fires when Paystack creates a new subscription for a customer.
+         We capture the subscription code here so /portal and /cancel work
+         even if the charge.success metadata is missing.                  */
+      if (event.event === "subscription.create") {
+        const code      = data.subscription_code;
+        const custCode  = data.customer?.customer_code ?? null;
+        const email     = data.customer?.email ?? null;
+        if (code && email) {
+          const { data: userRow } = await supabase
+            .from("users").select("id").eq("email", email).maybeSingle();
+          if (userRow?.id) {
+            await supabase.from("subscriptions").upsert(
+              {
+                user_id:                    userRow.id,
+                paystack_subscription_code: code,
+                paystack_customer_code:     custCode,
+                status:                     "active",
+                plan_tier:                  "paid"
+              },
+              { onConflict: "user_id" }
+            );
+            logger.info({ userId: userRow.id, code }, "[billing] subscription.create — code stored");
           }
         }
       }

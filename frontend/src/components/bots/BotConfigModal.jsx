@@ -213,6 +213,9 @@ export function BotConfigModal({ bot: initialBot, user, onClose, onSaved }) {
   const setAi = (k) => (e) =>
     setForm((p) => ({ ...p, ai_config: { ...p.ai_config, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value } }));
 
+  const setAiVal = (k, v) =>
+    setForm((p) => ({ ...p, ai_config: { ...p.ai_config, [k]: v } }));
+
   const selectedProvider = AI_PROVIDERS.find((p) => p.id === (form.ai_config.provider || "openai")) ?? AI_PROVIDERS[0];
 
   /* ── Group management config ─────────────────────────────── */
@@ -582,108 +585,203 @@ export function BotConfigModal({ bot: initialBot, user, onClose, onSaved }) {
           </div>
         )}
 
-        {tab === "ai" && isPro && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-            <div className="toggle-row">
-              <div>
-                <div className="toggle-label">Enable AI responses</div>
-                <div className="toggle-desc">Bot uses AI when no keyword trigger or command matches</div>
-              </div>
-              <label className="toggle">
-                <input type="checkbox" checked={!!form.ai_config.enabled} onChange={setAi("enabled")} />
-                <span className="toggle-track" />
-              </label>
-            </div>
+        {tab === "ai" && isPro && (() => {
+          const botType   = bot.bot_type ?? "dm";
+          const hasDm     = botType === "dm"    || botType === "all";
+          const hasGroup  = botType === "group"  || botType === "all";
+          const dmEnabled     = form.ai_config.dm_enabled     !== false;
+          const groupsEnabled = form.ai_config.groups_enabled === true;
 
-            {/* Provider selection */}
-            <div className="field">
-              <label className="field-label">AI Provider</label>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "0.5rem" }}>
-                {AI_PROVIDERS.map((p) => (
-                  <button key={p.id} type="button"
-                    onClick={() => setForm((f) => ({ ...f, ai_config: { ...f.ai_config, provider: p.id, model: p.models[0] } }))}
-                    style={{
-                      padding: "0.625rem 0.5rem",
-                      borderRadius: "var(--radius)",
-                      border: `1.5px solid ${form.ai_config.provider === p.id ? "var(--accent)" : "var(--border)"}`,
-                      background: form.ai_config.provider === p.id ? "var(--accent-dim)" : "var(--bg)",
-                      cursor: "pointer", fontSize: "0.8rem", fontWeight: 600,
-                      color: form.ai_config.provider === p.id ? "var(--accent)" : "var(--text2)",
-                      display: "flex", flexDirection: "column", alignItems: "center", gap: "0.2rem"
-                    }}>
-                    <span>{p.logo}</span>
-                    <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{p.name.split(" ")[0]}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
 
-            {/* Model */}
-            <div className="field">
-              <label className="field-label">Model</label>
-              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                <select className="input" value={form.ai_config.model || selectedProvider.models[0]}
-                  onChange={setAi("model")} style={{ flex: 1 }}>
-                  {selectedProvider.models.map((m) => <option key={m} value={m}>{m}</option>)}
-                </select>
-                <a href={selectedProvider.applyUrl} target="_blank" rel="noopener noreferrer"
-                  className="btn btn-secondary btn-sm" style={{ flexShrink: 0, whiteSpace: "nowrap" }}>
-                  Get API key ↗
-                </a>
+              {/* Master AI toggle */}
+              <div className="toggle-row">
+                <div>
+                  <div className="toggle-label">Enable AI responses</div>
+                  <div className="toggle-desc">Bot uses AI when no keyword trigger or command matches</div>
+                </div>
+                <label className="toggle">
+                  <input type="checkbox" checked={!!form.ai_config.enabled} onChange={setAi("enabled")} />
+                  <span className="toggle-track" />
+                </label>
               </div>
-            </div>
 
-            {/* API Key */}
-            <div className="field">
-              <label className="field-label">
-                API Key
-                {form.ai_config.has_key && (
-                  <span style={{ marginLeft: "0.5rem", fontSize: "0.75rem", color: "var(--success)" }}>✓ Key saved</span>
+              {form.ai_config.enabled && (<>
+
+                {/* Provider selection */}
+                <div className="field">
+                  <label className="field-label">AI Provider</label>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "0.5rem" }}>
+                    {AI_PROVIDERS.map((p) => (
+                      <button key={p.id} type="button"
+                        onClick={() => setForm((f) => ({ ...f, ai_config: { ...f.ai_config, provider: p.id, model: p.models[0] } }))}
+                        style={{
+                          padding: "0.625rem 0.5rem",
+                          borderRadius: "var(--radius)",
+                          border: `1.5px solid ${form.ai_config.provider === p.id ? "var(--accent)" : "var(--border)"}`,
+                          background: form.ai_config.provider === p.id ? "var(--accent-dim)" : "var(--bg)",
+                          cursor: "pointer", fontSize: "0.8rem", fontWeight: 600,
+                          color: form.ai_config.provider === p.id ? "var(--accent)" : "var(--text2)",
+                          display: "flex", flexDirection: "column", alignItems: "center", gap: "0.2rem"
+                        }}>
+                        <span>{p.logo}</span>
+                        <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%" }}>{p.name.split(" ")[0]}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Model */}
+                <div className="field">
+                  <label className="field-label">Model</label>
+                  <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                    <select className="input" value={form.ai_config.model || selectedProvider.models[0]}
+                      onChange={setAi("model")} style={{ flex: 1 }}>
+                      {selectedProvider.models.map((m) => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                    <a href={selectedProvider.applyUrl} target="_blank" rel="noopener noreferrer"
+                      className="btn btn-secondary btn-sm" style={{ flexShrink: 0, whiteSpace: "nowrap" }}>
+                      Get API key ↗
+                    </a>
+                  </div>
+                </div>
+
+                {/* API Key */}
+                <div className="field">
+                  <label className="field-label">
+                    API Key
+                    {form.ai_config.has_key && (
+                      <span style={{ marginLeft: "0.5rem", fontSize: "0.75rem", color: "var(--success)" }}>✓ Key saved</span>
+                    )}
+                    {form.ai_config.is_sensitive && form.ai_config.has_key && (
+                      <span style={{ marginLeft: "0.5rem", fontSize: "0.75rem", color: "var(--warning)" }}>🔒 Sensitive — not viewable</span>
+                    )}
+                  </label>
+                  <div style={{ position: "relative" }}>
+                    <input
+                      className="input"
+                      type={aiKeyVisible ? "text" : "password"}
+                      placeholder={form.ai_config.has_key ? "Enter new key to replace…" : `Paste your ${selectedProvider.name} API key…`}
+                      value={aiKeyInput}
+                      onChange={(e) => setAiKeyInput(e.target.value)}
+                      style={{ paddingRight: "3rem" }}
+                    />
+                    <button type="button"
+                      onClick={() => setAiKeyVisible((v) => !v)}
+                      style={{ position: "absolute", right: "0.75rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "var(--text3)", fontSize: "0.875rem" }}>
+                      {aiKeyVisible ? "🙈" : "👁"}
+                    </button>
+                  </div>
+                  <span className="field-hint">Key is encrypted and stored securely. Never exposed in API responses.</span>
+                  <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.375rem", cursor: "pointer", fontSize: "0.875rem" }}>
+                    <input type="checkbox" checked={aiKeySensitive} onChange={(e) => setAiKeySensitive(e.target.checked)} />
+                    <span style={{ color: "var(--text2)" }}>
+                      Mark as <strong>very sensitive</strong> — after saving, the key cannot be viewed again (only replaced)
+                    </span>
+                  </label>
+                </div>
+
+                {/* ── DM channel ─────────────────────────────────── */}
+                {hasDm && (
+                  <div style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "0.875rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                    <div className="toggle-row" style={{ marginBottom: 0 }}>
+                      <div>
+                        <div className="toggle-label">💬 AI in Direct Messages</div>
+                        <div className="toggle-desc">Reply with AI when someone messages the bot directly</div>
+                      </div>
+                      <label className="toggle">
+                        <input type="checkbox" checked={dmEnabled}
+                          onChange={(e) => setAiVal("dm_enabled", e.target.checked)} />
+                        <span className="toggle-track" />
+                      </label>
+                    </div>
+                    {dmEnabled && (
+                      <div className="field" style={{ marginBottom: 0 }}>
+                        <label className="field-label">DM trigger mode</label>
+                        <select className="input" value={form.ai_config.dm_trigger_mode ?? "all"}
+                          onChange={setAi("dm_trigger_mode")}>
+                          <option value="all">All messages — respond to every DM</option>
+                          <option value="keyword">Keyword — respond only when DM starts with prefix</option>
+                          <option value="mention">Mention — respond only when bot is @-tagged</option>
+                        </select>
+                        {(form.ai_config.dm_trigger_mode === "keyword") && (
+                          <input className="input" style={{ marginTop: "0.4rem" }}
+                            placeholder="Trigger prefix (default: @bot)"
+                            value={form.ai_config.trigger_prefix ?? ""}
+                            onChange={setAi("trigger_prefix")} />
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
-                {form.ai_config.is_sensitive && form.ai_config.has_key && (
-                  <span style={{ marginLeft: "0.5rem", fontSize: "0.75rem", color: "var(--warning)" }}>🔒 Sensitive — not viewable</span>
+
+                {/* ── Group channel ───────────────────────────────── */}
+                {hasGroup && (
+                  <div style={{ background: "var(--bg)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "0.875rem", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+                    <div className="toggle-row" style={{ marginBottom: 0 }}>
+                      <div>
+                        <div className="toggle-label">👥 AI in Group Chats</div>
+                        <div className="toggle-desc">Reply with AI in groups (bot must be admin)</div>
+                      </div>
+                      <label className="toggle">
+                        <input type="checkbox" checked={groupsEnabled}
+                          onChange={(e) => setAiVal("groups_enabled", e.target.checked)} />
+                        <span className="toggle-track" />
+                      </label>
+                    </div>
+                    {groupsEnabled && (<>
+                      <div className="field" style={{ marginBottom: 0 }}>
+                        <label className="field-label">Group trigger mode</label>
+                        <select className="input" value={form.ai_config.group_trigger_mode ?? "mention"}
+                          onChange={setAi("group_trigger_mode")}>
+                          <option value="mention">Mention — respond only when bot is @-tagged (recommended)</option>
+                          <option value="all">All messages — respond to every group message</option>
+                          <option value="keyword">Keyword — respond only when message starts with prefix</option>
+                        </select>
+                        {(form.ai_config.group_trigger_mode === "keyword") && (
+                          <input className="input" style={{ marginTop: "0.4rem" }}
+                            placeholder="Trigger prefix (default: @bot)"
+                            value={form.ai_config.trigger_prefix ?? ""}
+                            onChange={setAi("trigger_prefix")} />
+                        )}
+                      </div>
+                      <div className="field" style={{ marginBottom: 0 }}>
+                        <label className="field-label">
+                          Group system prompt
+                          <span style={{ fontWeight: 400, color: "var(--text3)", marginLeft: "0.4rem", fontSize: "0.75rem" }}>(optional — overrides shared prompt for groups)</span>
+                        </label>
+                        <textarea className="input" rows={3} style={{ resize: "vertical" }}
+                          placeholder="You are a group moderator assistant. Be brief and community-focused…"
+                          value={form.ai_config.group_system_prompt ?? ""}
+                          onChange={setAi("group_system_prompt")} />
+                      </div>
+                    </>)}
+                  </div>
                 )}
-              </label>
-              <div style={{ position: "relative" }}>
-                <input
-                  className="input"
-                  type={aiKeyVisible ? "text" : "password"}
-                  placeholder={form.ai_config.has_key ? "Enter new key to replace…" : `Paste your ${selectedProvider.name} API key…`}
-                  value={aiKeyInput}
-                  onChange={(e) => setAiKeyInput(e.target.value)}
-                  style={{ paddingRight: "3rem" }}
-                />
-                <button type="button"
-                  onClick={() => setAiKeyVisible((v) => !v)}
-                  style={{ position: "absolute", right: "0.75rem", top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "var(--text3)", fontSize: "0.875rem" }}>
-                  {aiKeyVisible ? "🙈" : "👁"}
-                </button>
-              </div>
-              <span className="field-hint">Key is encrypted and stored securely. Never exposed in API responses.</span>
 
-              <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", marginTop: "0.375rem", cursor: "pointer", fontSize: "0.875rem" }}>
-                <input type="checkbox" checked={aiKeySensitive} onChange={(e) => setAiKeySensitive(e.target.checked)} />
-                <span style={{ color: "var(--text2)" }}>
-                  Mark as <strong>very sensitive</strong> — after saving, the key cannot be viewed again (only replaced)
-                </span>
-              </label>
-            </div>
+                {/* Shared system prompt */}
+                <div className="field">
+                  <label className="field-label">
+                    System prompt
+                    {hasGroup && groupsEnabled && (
+                      <span style={{ fontWeight: 400, color: "var(--text3)", marginLeft: "0.4rem", fontSize: "0.75rem" }}>(used for DMs; groups use the group prompt above if set)</span>
+                    )}
+                  </label>
+                  <textarea className="input" rows={4} style={{ resize: "vertical" }}
+                    placeholder={`You are a helpful WhatsApp assistant for [your business name]. Be friendly and concise. Answer in 1-3 sentences. If asked about products you don't know about, say you'll check and get back to them.`}
+                    value={form.ai_config.system_prompt ?? ""}
+                    onChange={setAi("system_prompt")} />
+                  <span className="field-hint">Instructions for the AI. Include your business name, tone, and what the bot should/shouldn't do.</span>
+                </div>
 
-            {/* System prompt */}
-            <div className="field">
-              <label className="field-label">System prompt</label>
-              <textarea className="input" rows={4} style={{ resize: "vertical" }}
-                placeholder={`You are a helpful WhatsApp assistant for [your business name]. Be friendly and concise. Answer in 1-3 sentences. If asked about products you don't know about, say you'll check and get back to them.`}
-                value={form.ai_config.system_prompt ?? ""}
-                onChange={setAi("system_prompt")} />
-              <span className="field-hint">Instructions for the AI. Include your business name, tone, and what the bot should/shouldn't do.</span>
+                <div style={{ background: "var(--info-bg)", border: "1px solid var(--border-accent)", borderRadius: "var(--radius)", padding: "0.75rem", fontSize: "0.8rem", color: "var(--text2)" }}>
+                  💡 <strong>Priority order:</strong> Commands → Keyword triggers → AI response → Auto-reply fallback
+                </div>
+              </>)}
             </div>
-
-            <div style={{ background: "var(--info-bg)", border: "1px solid var(--border-accent)", borderRadius: "var(--radius)", padding: "0.75rem", fontSize: "0.8rem", color: "var(--text2)" }}>
-              💡 <strong>Priority order:</strong> Commands → Keyword triggers → AI response → Auto-reply fallback
-            </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* ── Group Management ── */}
         {tab === "group" && (
