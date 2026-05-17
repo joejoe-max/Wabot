@@ -212,7 +212,14 @@ export class BotInstance {
       if (this.socket) {
         try { this.socket.end(undefined); } catch {}
       }
-      const { version } = await fetchLatestBaileysVersion();
+      let version;
+      try {
+        ({ version } = await fetchLatestBaileysVersion());
+      } catch {
+        /* Network issue fetching latest version — fall back to last known good */
+        version = [2, 3000, 1035194821];
+        logger.warn({ botId: this.botId }, "fetchLatestBaileysVersion failed — using fallback version");
+      }
       const { state, saveCreds } = await createSupabaseAuthState(this.botId);
 
       this.socket = makeWASocket({

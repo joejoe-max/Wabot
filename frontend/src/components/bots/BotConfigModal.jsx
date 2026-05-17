@@ -107,7 +107,8 @@ export function BotConfigModal({ bot: initialBot, user, onClose, onSaved }) {
   const [qrUrl,       setQrUrl]       = useState(null);
   const [adminGroups, setAdminGroups] = useState(null);
   const [vulgarInput, setVulgarInput] = useState("");
-  const esRef = useRef(null);
+  const esRef     = useRef(null);
+  const qrPollRef = useRef(null);
 
   const TABS = buildTabs(isPro, bot.bot_type);
 
@@ -119,9 +120,13 @@ export function BotConfigModal({ bot: initialBot, user, onClose, onSaved }) {
       .catch(() => setAdminGroups({ count: 0, groups: [] }));
   }, [tab, bot.id]);
 
-  /* SSE for QR tab */
+  /* SSE + HTTP polling fallback for QR tab */
   useEffect(() => {
-    if (tab !== "qr") { esRef.current?.close(); return; }
+    if (tab !== "qr") {
+      esRef.current?.close();
+      clearInterval(qrPollRef.current);
+      return;
+    }
     const token = localStorage.getItem("wabot_token") ?? "";
     const url   = botsApi.eventsUrl(bot.id, token);
     const es    = new EventSource(url);
@@ -133,7 +138,19 @@ export function BotConfigModal({ bot: initialBot, user, onClose, onSaved }) {
         if (d.type === "status") setBot((b) => ({ ...b, status: d.status }));
       } catch {}
     };
-    return () => es.close();
+
+    /* Poll every 12 s as fallback in case SSE misses a QR rotation */
+    qrPollRef.current = setInterval(async () => {
+      try {
+        const data = await botsApi.qr(bot.id);
+        if (data?.qrCodeDataUrl) setQrUrl(data.qrCodeDataUrl);
+      } catch {}
+    }, 12_000);
+
+    return () => {
+      es.close();
+      clearInterval(qrPollRef.current);
+    };
   }, [tab, bot.id]);
 
   /* ── Generic setters ─────────────────────────────────────── */

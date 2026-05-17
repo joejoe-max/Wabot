@@ -425,8 +425,15 @@ select.input { cursor: pointer; }
 .modal-close:hover { color: var(--text); }
 .modal h3 { font-size: 1.125rem; font-weight: 700; }
 .modal p  { font-size: 0.875rem; color: var(--text2); }
-.qr-wrap { background: white; border-radius: 12px; padding: 10px; }
-.qr-wrap img { width: 200px; height: 200px; }
+.qr-wrap { background: white; border-radius: 12px; padding: 10px; display: inline-flex; }
+.qr-wrap img { width: min(220px, calc(100vw - 6rem)); height: auto; aspect-ratio: 1; }
+
+/* ─── Deploy bot type grid ─────────────────────────────────── */
+.deploy-type-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.625rem;
+}
 
 /* ─── Activity feed ───────────────────────────────────────────── */
 .activity-list { display: flex; flex-direction: column; }
@@ -693,6 +700,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   .stats-grid    { grid-template-columns: repeat(2, 1fr); }
   .bots-grid     { grid-template-columns: 1fr; }
   .modal         { max-width: 98vw; padding: 1.5rem; }
+  .modal-wide    { max-width: 98vw; }
 
   /* Landing */
   .hero-section    { padding: 4rem 1.25rem 2rem; }
@@ -722,6 +730,11 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   .stat-value { font-size: 1.4rem; }
   .docs-overview-grid { grid-template-columns: 1fr 1fr; }
   .land-api-grid  { grid-template-columns: 1fr; }
+  /* Single-column deploy type grid on very small phones */
+  .deploy-type-grid { grid-template-columns: 1fr; }
+  /* Tighter auth card padding on tiny screens */
+  .auth-card { padding: 1.25rem; }
+  .modal { padding: 1.25rem; }
 }
 
 /* ═══════════════════════════════════════════════════════════════
