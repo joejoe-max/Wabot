@@ -11,10 +11,12 @@ export function BotCard({ bot, onConfigure, onShowQr, onSendDM, onDelete, deleti
     "failed", 
     "qr_timeout", 
     "error",
-    "connecting",
-    "awaiting_qr_scan"
+    "connecting"
   ].includes(bot.status);
 
+  // ✅ Add pairing mode detection
+  const isAwaitingPairing = bot.status === "awaiting_pairing";
+  const isAwaitingQR = bot.status === "awaiting_qr_scan";
   const canSendDM = bot.status === "connected";
 
   const getReconnectText = () => {
@@ -22,6 +24,8 @@ export function BotCard({ bot, onConfigure, onShowQr, onSendDM, onDelete, deleti
       case "connecting":
       case "reconnecting":
         return "Connecting...";
+      case "awaiting_pairing":
+        return "Enter Pairing Code";
       case "awaiting_qr_scan":
         return "Show QR";
       case "disconnected":
@@ -81,7 +85,28 @@ export function BotCard({ bot, onConfigure, onShowQr, onSendDM, onDelete, deleti
       </div>
 
       <div className="bot-card-actions" onClick={(e) => e.stopPropagation()}>
-        {needsReconnect && (
+        {/* Show different button for pairing mode */}
+        {isAwaitingPairing && (
+          <button 
+            className="btn btn-primary btn-sm" 
+            style={{ flex: 1 }}
+            onClick={() => onConfigure({ ...bot, _openQr: true })}
+          >
+            🔢 Enter Pairing Code
+          </button>
+        )}
+
+        {isAwaitingQR && (
+          <button 
+            className="btn btn-secondary btn-sm" 
+            style={{ flex: 1 }}
+            onClick={() => onConfigure({ ...bot, _openQr: true })}
+          >
+            📱 Show QR
+          </button>
+        )}
+
+        {needsReconnect && !isAwaitingPairing && !isAwaitingQR && (
           <button 
             className="btn btn-secondary btn-sm" 
             style={{ flex: 1 }}
