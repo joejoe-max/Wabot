@@ -1408,4 +1408,4 @@ export class BotInstance {
     });
     this._scheduleLogFlush();
   }
-}
+  }
