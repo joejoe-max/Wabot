@@ -336,14 +336,11 @@ router.post("/:id/send", async (req, res) => {
   if (!bot || bot.user_id !== userId) return res.status(404).json({ error: "Bot not found." });
 
   try {
-    await botManager.sendMessage(id, to, message);
-    await supabase.from("bot_activity").insert({
-      user_id: userId, bot_id: id, event_type: "dm_sent",
-      details: `Manual DM sent to ${to}`,
-      metadata: { to, preset: req.body?.preset ?? "custom", preview: message.slice(0, 80) }
-    }).catch(() => {});
+  await botManager.sendMessage(id, to, message, { persist: false });
+    // Do not persist manual dashboard sends to Supabase (user requested direct send without DB insert)
     return res.json({ ok: true, message: "Message sent." });
   } catch (err) {
+    // If message sending fails, do not insert a DB record. Return error to client.
     return res.status(409).json({ error: err.message });
   }
 });

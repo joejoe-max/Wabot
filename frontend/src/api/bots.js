@@ -33,7 +33,8 @@ export const botsApi = {
   v1Bots:          ()                       => apiFetch("/v1/bots"),
   v1Bot:           (id)                     => apiFetch(`/v1/bots/${id}`),
   v1SendMessage:   (botId, to, msg)         => apiFetch("/v1/messages/send",     { method: "POST",   body: JSON.stringify({ bot_id: botId, to, message: msg }) }),
-  v1Conversations: (botId, limit)           => apiFetch(`/v1/conversations?bot_id=${botId || ""}&limit=${limit || 50}`),
+  v1Conversations: (botId, limit, offset)   => apiFetch(`/v1/conversations?bot_id=${botId || ""}&limit=${limit || 50}&offset=${offset || 0}`),
   v1Activity:      (botId, limit)           => apiFetch(`/v1/activity?bot_id=${botId || ""}&limit=${limit || 100}`),
   v1TestWebhook:   (url, secret)            => apiFetch("/v1/webhooks/test",     { method: "POST",   body: JSON.stringify({ url, secret }) }),
+  v1MarkConversationsRead: (activityIds)    => apiFetch("/v1/conversations/mark-read", { method: "POST", body: JSON.stringify({ activity_ids: activityIds }) }),
 };

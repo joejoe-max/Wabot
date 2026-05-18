@@ -270,15 +270,17 @@ export class BotInstance {
     if (this._logFlushTimer) clearTimeout(this._logFlushTimer);
   }
 
-  async sendMessage(to, text) {
+  async sendMessage(to, text, options = { persist: true }) {
     if (!this.socket) throw new Error("Bot is not connected.");
     if (this.status !== "connected") throw new Error("Bot is not connected. Check bot status and try again.");
     const jid = to.replace(/[^0-9]/g, "") + "@s.whatsapp.net";
     await this._queue.send(async () => {
       await this.socket.sendMessage(jid, { text });
     });
-    this._queueUsage({ totalMessages: 1, lastActivity: new Date().toISOString() });
-    await this._log("dm_sent", `Message sent to ${to}`);
+    if (options.persist !== false) {
+      this._queueUsage({ totalMessages: 1, lastActivity: new Date().toISOString() });
+      await this._log("dm_sent", `Message sent to ${to}`);
+    }
   }
 
   /* ── Connection update ────────────────────────────────────── */
@@ -315,6 +317,19 @@ export class BotInstance {
         await this._log("bot_disconnected", "Logged out — QR scan required to reconnect");
         return;
       }
+
+      // Inspect error payload for conflict/device_removed hints (Baileys stream errors)
+      try {
+        const raw = lastDisconnect?.error ?? null;
+        const text = raw ? JSON.stringify(raw) : "";
+        if (text.includes("device_removed") || text.includes("conflict") || text.includes("device_revoked")) {
+          logger.error({ botId: this.botId, lastDisconnect }, "Detected device_removed/conflict — clearing session");
+          await clearSupabaseSession(this.botId);
+          await this._setStatus("disconnected");
+          await this._log("bot_disconnected", "Session removed by WhatsApp (device removed/conflict) — QR scan required to reconnect");
+          return;
+        }
+      } catch (e) { /* ignore JSON errors */ }
 
       if (!this._destroyed) {
         this._scheduleReconnect();
@@ -408,7 +423,13 @@ export class BotInstance {
     if (type !== "notify") return;
     for (const msg of messages) {
       if (msg.key.fromMe) continue;
-      await this._handleInbound(msg);
+      try {
+        await this._handleInbound(msg);
+      } catch (err) {
+        // Do not let a single message failure crash the instance (e.g. decrypt errors)
+        logger.warn({ err, botId: this.botId, msgId: msg.key?.id }, "Failed to process inbound message — skipping");
+        continue;
+      }
     }
   }
 

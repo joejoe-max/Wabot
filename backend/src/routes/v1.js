@@ -683,6 +683,7 @@ router.post("/messages/broadcast", async (req, res) => {
 router.get("/conversations", async (req, res) => {
   const limit  = Math.min(Number(req.query.limit) || 50, 200);
   const bot_id = req.query.bot_id;
+  const offset = Math.max(0, Number(req.query.offset) || 0);
 
   let q = supabase
     .from("bot_activity")
@@ -690,12 +691,54 @@ router.get("/conversations", async (req, res) => {
     .eq("user_id", req.user.sub)
     .in("event_type", ["message_received", "api_message_sent", "broadcast_sent"])
     .order("created_at", { ascending: false })
-    .limit(limit);
+    .limit(limit)
+    .offset(offset);
   if (bot_id) q = q.eq("bot_id", bot_id);
 
   const { data, error } = await q;
   if (error) return res.status(500).json({ error: "Could not fetch conversations." });
-  return res.json({ conversations: data ?? [], count: (data ?? []).length });
+  const rows = data ?? [];
+
+  // Fetch persisted read markers (optional) to mark unread state
+  try {
+    const ids = rows.map((r) => r.id).filter(Boolean);
+    if (ids.length > 0) {
+      const { data: reads } = await supabase
+        .from("conversation_reads")
+        .select("bot_activity_id")
+        .eq("user_id", req.user.sub)
+        .in("bot_activity_id", ids);
+
+      const readSet = new Set((reads ?? []).map((r) => r.bot_activity_id));
+      for (const r of rows) {
+        r.unread = !readSet.has(r.id);
+      }
+    } else {
+      for (const r of rows) r.unread = true;
+    }
+  } catch (e) {
+    // If read tracking fails, default to showing items as unread
+    for (const r of rows) r.unread = true;
+  }
+
+  return res.json({ conversations: rows, count: rows.length, offset });
+});
+
+
+/* ── POST /api/v1/conversations/mark-read ───────────────────── */
+router.post("/conversations/mark-read", async (req, res) => {
+  const userId = req.user.sub;
+  const ids = Array.isArray(req.body?.activity_ids) ? req.body.activity_ids : [];
+  if (ids.length === 0) return res.status(400).json({ error: "activity_ids array is required." });
+
+  const toInsert = ids.map((aid) => ({ user_id: userId, bot_activity_id: aid }));
+  try {
+    // Upsert to avoid duplicates
+    await supabase.from("conversation_reads").insert(toInsert).select().catch(() => {});
+    return res.json({ ok: true, marked: ids.length });
+  } catch (err) {
+    return res.status(500).json({ error: "Could not mark as read." });
+  }
 });
 
 /* ── GET /api/v1/activity ────────────────────────────────────── */

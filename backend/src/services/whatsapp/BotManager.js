@@ -142,10 +142,14 @@ class BotManager {
     logger.info({ userId }, "[BotManager] downgradeUserBots — plan_tier set to free for all running bots");
   }
 
-  async sendMessage(botId, to, text) {
+  /**
+   * Send a message via a bot instance. Options: { persist: boolean }
+   * If persist is false, the instance will not write activity/usage to DB.
+   */
+  async sendMessage(botId, to, text, options = { persist: true }) {
     const inst = this.instances.get(botId);
     if (!inst) throw new Error("Bot instance not found.");
-    await inst.sendMessage(to, text);
+    await inst.sendMessage(to, text, options);
   }
 
   async getAdminGroups(botId) {

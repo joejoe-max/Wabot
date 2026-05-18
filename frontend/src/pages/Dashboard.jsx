@@ -7,6 +7,7 @@ import { billingApi } from "../api/billing.js";
 import { PageSpinner } from "../components/ui/Spinner.jsx";
 import { Overview } from "./dashboard/Overview.jsx";
 import { Bots } from "./dashboard/Bots.jsx";
+import Conversations from "./dashboard/Conversations.jsx";
 import { Logs } from "./dashboard/Logs.jsx";
 import { ApiKeys } from "./dashboard/ApiKeys.jsx";
 import { Billing } from "./dashboard/Billing.jsx";
@@ -15,6 +16,7 @@ import { ResendVerificationModal } from "../components/auth/ResendVerificationMo
 
 const TABS = [
   { id: "overview", icon: "⊞", label: "Overview" },
+  { id: "conversations", icon: "💬", label: "Conversations" },
   { id: "bots", icon: "🤖", label: "Bots" },
   { id: "logs", icon: "📋", label: "Logs" },
   { id: "apikeys", icon: "🔑", label: "API Keys" },
@@ -204,6 +206,7 @@ export default function Dashboard() {
               onResendVerification={() => setShowVerifyModal(true)}
             />
           )}
+          {tab === "conversations" && <Conversations />}
           {tab === "bots" && <Bots data={data} onRefresh={refresh} />}
           {tab === "logs" && <Logs activity={data.activity} bots={data.bots} />}
           {tab === "apikeys" && <ApiKeys user={user} />}

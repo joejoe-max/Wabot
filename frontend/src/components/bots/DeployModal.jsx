@@ -111,10 +111,12 @@ export function DeployModal({ user, onClose, onDeployed }) {
     clearTimeout(firstPollRef.current);
     clearInterval(pollRef.current);
     clearInterval(cdRef.current);
-    setStep("done");
-    es?.close();
-    onDeployed();
-  }, [onDeployed]);
+    // close SSE and notify parent that deployment completed
+    try { es?.close(); } catch (e) {}
+    // give parent a chance to refresh state, then close this modal
+    try { onDeployed(); } catch (e) {}
+    try { onClose(); } catch (e) {}
+  }, [onDeployed, onClose]);
 
   /* ── HTTP polling (SSE fallback + initial fetch) ─────────────── */
   const doPoll = useCallback(async () => {
@@ -274,9 +276,10 @@ export function DeployModal({ user, onClose, onDeployed }) {
             </button>
             <button
               className="btn btn-primary"
-              style={{ flex: 1 }}
+              type="button"
               disabled={!accepted}
               onClick={() => setStep("form")}
+              style={{ flex: 1, touchAction: "manipulation" }}
             >
               I understand — Continue
             </button>
