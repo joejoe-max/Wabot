@@ -252,16 +252,23 @@ router.get("/:id/events", async (req, res) => {
     return res.status(404).json({ error: "Bot not found." });
 
   res.set({
-    "Content-Type":      "text/event-stream",
-    "Cache-Control":     "no-cache",
+    "Content-Type":      "text/event-stream; charset=utf-8",
+    "Cache-Control":     "no-cache, no-store, no-transform",
     "Connection":        "keep-alive",
-    "X-Accel-Buffering": "no"
+    "X-Accel-Buffering": "no",
+    "X-Content-Type-Options": "nosniff",
   });
   res.flushHeaders();
+  /* Send an initial comment so the browser confirms the stream opened */
+  res.write(": stream-open\n\n");
+  if (typeof res.flush === "function") res.flush();
 
   const pingInterval = setInterval(() => {
-    try { res.write(": ping\n\n"); } catch { clearInterval(pingInterval); }
-  }, 20_000);
+    try {
+      res.write(": ping\n\n");
+      if (typeof res.flush === "function") res.flush();
+    } catch { clearInterval(pingInterval); }
+  }, 15_000);
 
   botManager.addSseClient(id, res);
 

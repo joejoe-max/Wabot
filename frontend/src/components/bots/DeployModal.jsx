@@ -42,9 +42,14 @@ const WARNINGS = [
   }
 ];
 
-const POLL_MS    = 12_000;
-const TIMEOUT_MS = 10 * 60_000;
-const QR_LIFE_S  = 20;
+/* Baileys rotates QR codes roughly every 60 seconds */
+const QR_LIFE_S    = 60;
+/* First HTTP poll: give the bot ~3 s to start and emit a QR */
+const FIRST_POLL_MS = 3_000;
+/* Ongoing poll interval as SSE fallback */
+const POLL_MS       = 8_000;
+/* How long to wait for a scan before the modal gives up */
+const TIMEOUT_MS    = 10 * 60_000;
 
 export function DeployModal({ user, onClose, onDeployed }) {
   const [step,         setStep]         = useState("warning");
@@ -56,39 +61,54 @@ export function DeployModal({ user, onClose, onDeployed }) {
   const [error,        setError]        = useState("");
   const [qrUrl,        setQrUrl]        = useState(null);
   const [countdown,    setCountdown]    = useState(QR_LIFE_S);
-  const [reconnecting, setReconnecting] = useState(false);
+  const [qrExpired,    setQrExpired]    = useState(false);  /* true when countdown hits 0 */
 
-  const esRef        = useRef(null);
-  const timeoutRef   = useRef(null);
-  const pollRef      = useRef(null);
-  const cdRef        = useRef(null);
-  const connectedRef = useRef(false);
+  const esRef          = useRef(null);
+  const timeoutRef     = useRef(null);
+  const pollRef        = useRef(null);
+  const firstPollRef   = useRef(null);
+  const cdRef          = useRef(null);
+  const connectedRef   = useRef(false);
+  const botIdRef       = useRef(null);
 
+  /* ── cleanup on unmount ──────────────────────────────────────── */
   useEffect(() => () => {
     esRef.current?.close();
     clearTimeout(timeoutRef.current);
+    clearTimeout(firstPollRef.current);
     clearInterval(pollRef.current);
     clearInterval(cdRef.current);
   }, []);
 
+  /* ── countdown ───────────────────────────────────────────────── */
   const startCountdown = useCallback(() => {
     clearInterval(cdRef.current);
     setCountdown(QR_LIFE_S);
+    setQrExpired(false);
     cdRef.current = setInterval(() => {
-      setCountdown((c) => (c <= 1 ? QR_LIFE_S : c - 1));
+      setCountdown((c) => {
+        if (c <= 1) {
+          setQrExpired(true);
+          return 0;
+        }
+        return c - 1;
+      });
     }, 1000);
   }, []);
 
+  /* ── called when any QR url arrives ─────────────────────────── */
   const markQr = useCallback((url) => {
     setQrUrl(url);
-    setReconnecting(false);
+    setQrExpired(false);
     startCountdown();
   }, [startCountdown]);
 
+  /* ── called when connected status arrives ────────────────────── */
   const markConnected = useCallback((es) => {
     if (connectedRef.current) return;
     connectedRef.current = true;
     clearTimeout(timeoutRef.current);
+    clearTimeout(firstPollRef.current);
     clearInterval(pollRef.current);
     clearInterval(cdRef.current);
     setStep("done");
@@ -96,20 +116,31 @@ export function DeployModal({ user, onClose, onDeployed }) {
     onDeployed();
   }, [onDeployed]);
 
-  const startPoll = useCallback((botId) => {
-    clearInterval(pollRef.current);
-    pollRef.current = setInterval(async () => {
-      if (connectedRef.current) { clearInterval(pollRef.current); return; }
-      try {
-        const data = await botsApi.qr(botId);
-        if (data?.qrCodeDataUrl) markQr(data.qrCodeDataUrl);
-      } catch {
-        setReconnecting(true);
-      }
-    }, POLL_MS);
+  /* ── HTTP polling (SSE fallback + initial fetch) ─────────────── */
+  const doPoll = useCallback(async () => {
+    if (connectedRef.current) return;
+    try {
+      const data = await botsApi.qr(botIdRef.current);
+      if (data?.qrCodeDataUrl) markQr(data.qrCodeDataUrl);
+    } catch {
+      /* 404 = QR not ready yet — silently ignore */
+    }
   }, [markQr]);
 
-  const connectSse = useCallback((botId) => {
+  const startPolling = useCallback((botId) => {
+    botIdRef.current = botId;
+    clearTimeout(firstPollRef.current);
+    clearInterval(pollRef.current);
+
+    /* First poll after bot has had time to start */
+    firstPollRef.current = setTimeout(doPoll, FIRST_POLL_MS);
+
+    /* Ongoing interval as SSE fallback */
+    pollRef.current = setInterval(doPoll, POLL_MS);
+  }, [doPoll]);
+
+  /* ── SSE connection ──────────────────────────────────────────── */
+  const connectSse = useCallback((botId, onConn) => {
     const token = localStorage.getItem("wabot_token") ?? "";
     const es    = new EventSource(botsApi.eventsUrl(botId, token));
     esRef.current = es;
@@ -119,34 +150,42 @@ export function DeployModal({ user, onClose, onDeployed }) {
         const msg = JSON.parse(e.data);
         if (msg.type === "qr")     markQr(msg.qrUrl);
         if (msg.type === "status") {
-          if (msg.status === "connected")    markConnected(es);
-          if (msg.status === "connecting" || msg.status === "reconnecting") setReconnecting(true);
+          if (msg.status === "connected") onConn(es);
         }
       } catch {}
     };
+
+    /* SSE errors are non-fatal — EventSource auto-reconnects,
+       and the HTTP poll ensures we don't miss QR rotations. */
     es.onerror = () => {};
 
+    /* Overall timeout: 10 min with no successful scan */
     timeoutRef.current = setTimeout(() => {
       if (!connectedRef.current) {
         es.close();
+        clearTimeout(firstPollRef.current);
         clearInterval(pollRef.current);
         clearInterval(cdRef.current);
-        setError("Connection timed out (10 min). Please try deploying again.");
+        setError("Connection timed out (10 min). The QR window has closed. Please try deploying again.");
         setStep("form");
       }
     }, TIMEOUT_MS);
-  }, [markQr, markConnected]);
+  }, [markQr]);
 
+  /* ── Deploy form submit ──────────────────────────────────────── */
   const deploy = async (e) => {
     e.preventDefault();
     if (!name.trim()) return setError("Bot name is required.");
     setError(""); setLoading(true);
     try {
       const data = await botsApi.deploy({ botName: name.trim(), description: desc.trim(), botType });
+      const botId = data.bot.id;
       connectedRef.current = false;
+      setQrUrl(null);
+      setQrExpired(false);
       setStep("qr");
-      connectSse(data.bot.id);
-      startPoll(data.bot.id);
+      connectSse(botId, markConnected);
+      startPolling(botId);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -154,6 +193,7 @@ export function DeployModal({ user, onClose, onDeployed }) {
     }
   };
 
+  /* ── Email gate ──────────────────────────────────────────────── */
   if (!user?.emailVerified && !user?.email_verified) {
     return (
       <Modal onClose={onClose}>
@@ -168,7 +208,7 @@ export function DeployModal({ user, onClose, onDeployed }) {
   return (
     <Modal onClose={onClose}>
 
-      {/* ── Step 0: Warning ── */}
+      {/* ── Step 0: Warning ──────────────────────────────────── */}
       {step === "warning" && (
         <>
           <div style={{ fontSize: "2rem" }}>⚠️</div>
@@ -244,7 +284,7 @@ export function DeployModal({ user, onClose, onDeployed }) {
         </>
       )}
 
-      {/* ── Step 1: form ── */}
+      {/* ── Step 1: Form ─────────────────────────────────────── */}
       {step === "form" && (
         <>
           <div style={{ fontSize: "2rem" }}>🚀</div>
@@ -303,39 +343,96 @@ export function DeployModal({ user, onClose, onDeployed }) {
         </>
       )}
 
-      {/* ── Step 2: QR ── */}
+      {/* ── Step 2: QR ───────────────────────────────────────── */}
       {step === "qr" && (
         <>
           <div style={{ fontSize: "2rem" }}>📱</div>
           <h3>Scan to connect</h3>
 
-          {reconnecting && !qrUrl ? (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.75rem", padding: "1.5rem" }}>
-              <Spinner size="lg" />
-              <span style={{ fontSize: "0.8125rem", color: "var(--text2)", textAlign: "center" }}>
-                Reconnecting to WhatsApp… a fresh QR is on its way
-              </span>
-            </div>
-          ) : qrUrl ? (
-            <>
-              <p style={{ fontSize: "0.875rem", color: "var(--text2)", textAlign: "center" }}>
-                Open WhatsApp → Linked Devices → Link a Device, then scan:
+          {qrUrl ? (
+            /* ── QR available ── */
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.625rem", width: "100%" }}>
+              <p style={{ fontSize: "0.8125rem", color: "var(--text2)", textAlign: "center", margin: 0 }}>
+                Open WhatsApp → <strong>Linked Devices</strong> → <strong>Link a Device</strong>, then scan:
               </p>
-              <div className="qr-wrap">
-                <img src={qrUrl} alt="WhatsApp QR code" />
+
+              {/* QR image + optional "refreshing" overlay */}
+              <div style={{ position: "relative", display: "inline-block" }}>
+                <div
+                  className="qr-wrap"
+                  style={{
+                    opacity:    qrExpired ? 0.35 : 1,
+                    transition: "opacity 0.4s ease",
+                    filter:     qrExpired ? "blur(2px)" : "none",
+                  }}
+                >
+                  <img src={qrUrl} alt="WhatsApp QR code" />
+                </div>
+
+                {qrExpired && (
+                  <div style={{
+                    position:       "absolute",
+                    inset:          0,
+                    display:        "flex",
+                    flexDirection:  "column",
+                    alignItems:     "center",
+                    justifyContent: "center",
+                    gap:            "0.5rem",
+                    borderRadius:   "var(--radius)",
+                    background:     "rgba(10,10,15,0.55)",
+                    backdropFilter: "blur(4px)",
+                  }}>
+                    <Spinner size="md" />
+                    <span style={{ fontSize: "0.75rem", color: "#fff", fontWeight: 600 }}>
+                      Refreshing QR…
+                    </span>
+                  </div>
+                )}
               </div>
+
+              {/* Countdown row */}
               <div style={{ fontSize: "0.75rem", color: "var(--text3)", textAlign: "center" }}>
-                Refreshes in{" "}
-                <strong style={{ color: countdown <= 5 ? "var(--warning)" : "var(--text2)" }}>
-                  {countdown}s
-                </strong>
+                {qrExpired ? (
+                  <span style={{ color: "var(--warning)" }}>
+                    ⟳ Waiting for new QR code from WhatsApp…
+                  </span>
+                ) : (
+                  <>
+                    Refreshes in{" "}
+                    <strong style={{ color: countdown <= 10 ? "var(--warning)" : "var(--text2)" }}>
+                      {countdown}s
+                    </strong>
+                  </>
+                )}
                 {" "}· window stays open 10 min
               </div>
-            </>
+
+              {/* Hint */}
+              <div style={{
+                fontSize: "0.75rem",
+                color: "var(--text3)",
+                background: "var(--bg)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius)",
+                padding: "0.5rem 0.75rem",
+                width: "100%",
+                textAlign: "center"
+              }}>
+                The QR code rotates every ~60 s. If it expires, a new one loads automatically.
+              </div>
+            </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.75rem", padding: "1.5rem" }}>
+            /* ── Waiting for first QR ── */
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.875rem", padding: "1.5rem" }}>
               <Spinner size="lg" />
-              <span style={{ fontSize: "0.8125rem", color: "var(--text2)" }}>Generating QR code…</span>
+              <div style={{ textAlign: "center" }}>
+                <div style={{ fontSize: "0.875rem", color: "var(--text2)", fontWeight: 600 }}>
+                  Generating QR code…
+                </div>
+                <div style={{ fontSize: "0.75rem", color: "var(--text3)", marginTop: "0.25rem" }}>
+                  This takes a few seconds. The code will appear here automatically.
+                </div>
+              </div>
             </div>
           )}
 

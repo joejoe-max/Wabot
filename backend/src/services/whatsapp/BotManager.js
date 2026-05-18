@@ -173,7 +173,11 @@ class BotManager {
   }
 
   _sendSse(res, payload) {
-    try { res.write(`data: ${JSON.stringify(payload)}\n\n`); } catch {}
+    try {
+      res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      /* Flush for proxied environments (Nginx, Replit, etc.) */
+      if (typeof res.flush === "function") res.flush();
+    } catch {}
   }
 
   _closeSseClients(botId) {
