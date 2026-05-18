@@ -1705,3 +1705,100 @@ tr:hover td { background: rgba(255,255,255,0.02); }
     padding: 1rem;
   }
 }
+/* ─── Modal Styles ───────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 0.75rem;
+  backdrop-filter: blur(4px);
+}
+
+.modal-container {
+  background: var(--card2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  max-width: 500px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  position: relative;
+}
+
+.modal-container.modal-wide {
+  max-width: 560px;
+}
+
+.modal-close {
+  position: sticky;
+  top: 0.75rem;
+  right: 0.75rem;
+  float: right;
+  background: var(--card3);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--text2);
+  font-size: 1rem;
+  z-index: 10;
+  transition: var(--transition);
+}
+
+.modal-close:hover {
+  color: var(--text);
+  border-color: var(--border-accent);
+}
+
+.modal-body {
+  padding: 1.5rem;
+  overflow-y: auto;
+  clear: both;
+}
+
+/* Mobile Responsive */
+@media (max-width: 480px) {
+  .modal-overlay {
+    padding: 0.5rem;
+  }
+  
+  .modal-container {
+    max-width: calc(100vw - 1rem);
+  }
+  
+  .modal-body {
+    padding: 1rem;
+  }
+  
+  .modal-close {
+    top: 0.5rem;
+    right: 0.5rem;
+    width: 28px;
+    height: 28px;
+  }
+}
+
+/* Button Full Width on Mobile */
+@media (max-width: 480px) {
+  .btn.w-full,
+  .w-full {
+    width: 100%;
+  }
+  
+  /* Stack buttons vertically on mobile */
+  div[style*="display: flex"][style*="gap"] {
+    flex-wrap: wrap;
+  }
+  
+  .deploy-type-grid {
+    grid-template-columns: 1fr !important;
+  }
+}

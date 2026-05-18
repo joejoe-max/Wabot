@@ -105,6 +105,33 @@ function buildDirectMessagePayload(body = {}) {
   return String(body.message ?? "").trim();
 }
 
+/* ── Helper: Request pairing code with retry logic ──────────── */
+async function requestPairingCodeWithRetry(botId, phone, retryCount = 0, maxRetries = 3) {
+  try {
+    // Add delay before first attempt to let socket initialize
+    if (retryCount === 0) {
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+    
+    const code = await botManager.requestPairingCode(botId, phone);
+    return code;
+  } catch (err) {
+    const isConnectionError = err.message?.includes("Connection Closed") ||
+                              err.message?.includes("428") ||
+                              err.output?.statusCode === 428 ||
+                              err.message?.includes("ECONNRESET") ||
+                              err.message?.includes("timeout");
+    
+    if (isConnectionError && retryCount < maxRetries) {
+      const delay = 3000 * (retryCount + 1); // 3s, 6s, 9s
+      logger.info({ botId, retryCount, delay }, "Connection error, retrying pairing code request");
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return requestPairingCodeWithRetry(botId, phone, retryCount + 1, maxRetries);
+    }
+    throw err;
+  }
+}
+
 /* ── GET /api/bots/dashboard ─────────────────────────────────── */
 router.get("/dashboard", async (req, res) => {
   const userId = req.user.sub;
@@ -234,15 +261,17 @@ router.post("/deploy", deployLimiter, async (req, res) => {
 
   let pairingCode = null;
   try {
-    // Start the instance and wait for the socket to be created so pairing can be requested.
-    const instance = await botManager.deploy(bot.id, userId, { plan_tier: plan, bot_type: botType });
+    // Start the instance
+    await botManager.deploy(bot.id, userId, { plan_tier: plan, bot_type: botType });
 
     // If the frontend asked for phone+code pairing during deploy, kick off the native pairing code flow.
     const method = String(req.body?.method ?? "").toLowerCase();
     const phone = String(req.body?.phone ?? "").trim();
+    
     if (method === "code" && phone) {
       try {
-        pairingCode = await botManager.requestPairingCode(bot.id, phone);
+        // Use retry logic for pairing code request
+        pairingCode = await requestPairingCodeWithRetry(bot.id, phone);
       } catch (err) {
         logger.warn({ err, botId: bot.id, phone }, "Could not request pairing code during deploy");
       }
@@ -261,8 +290,6 @@ router.post("/deploy", deployLimiter, async (req, res) => {
   if (pairingCode) payload.pairing = { code: pairingCode };
   return res.status(201).json(payload);
 });
-
-/* pairing code endpoints were removed in favor of native Baileys pairing */
 
 /* ── GET /api/bots/:id/events (SSE) ─────────────────────────── */
 router.get("/:id/events", async (req, res) => {
@@ -345,7 +372,7 @@ router.post("/:id/request-pairing", async (req, res) => {
   if (!bot || bot.user_id !== userId) return res.status(404).json({ error: "Bot not found." });
 
   try {
-    const code = await botManager.requestPairingCode(id, phone);
+    const code = await requestPairingCodeWithRetry(id, phone);
     return res.json({ ok: true, code });
   } catch (err) {
     return res.status(500).json({ error: err?.message ?? "Could not request pairing code." });

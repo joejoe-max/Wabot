@@ -63,7 +63,6 @@ export function DeployModal({ user, onClose, onDeployed }) {
   const [pairExpiresAt, setPairExpiresAt] = useState(null);
   const [phoneInput,   setPhoneInput]   = useState("");
   const [showMethodSelect, setShowMethodSelect] = useState(false);
-  const [deployCompleted, setDeployCompleted] = useState(false);
 
   const esRef          = useRef(null);
   const timeoutRef     = useRef(null);
@@ -73,7 +72,6 @@ export function DeployModal({ user, onClose, onDeployed }) {
   const connectedRef   = useRef(false);
   const botIdRef       = useRef(null);
 
-  /* ── cleanup on unmount ──────────────────────────────────────── */
   useEffect(() => () => {
     esRef.current?.close();
     clearTimeout(timeoutRef.current);
@@ -82,7 +80,6 @@ export function DeployModal({ user, onClose, onDeployed }) {
     clearInterval(cdRef.current);
   }, []);
 
-  /* ── countdown ───────────────────────────────────────────────── */
   const startCountdown = useCallback(() => {
     clearInterval(cdRef.current);
     setCountdown(QR_LIFE_S);
@@ -107,13 +104,11 @@ export function DeployModal({ user, onClose, onDeployed }) {
   const markConnected = useCallback((es) => {
     if (connectedRef.current) return;
     connectedRef.current = true;
-    setDeployCompleted(true);
     clearTimeout(timeoutRef.current);
     clearTimeout(firstPollRef.current);
     clearInterval(pollRef.current);
     clearInterval(cdRef.current);
     try { es?.close(); } catch (e) {}
-    // Close modal immediately after successful connection
     setTimeout(() => {
       try { onDeployed(); } catch (e) {}
       try { onClose(); } catch (e) {}
@@ -125,9 +120,7 @@ export function DeployModal({ user, onClose, onDeployed }) {
     try {
       const data = await botsApi.qr(botIdRef.current);
       if (data?.qrCodeDataUrl) markQr(data.qrCodeDataUrl);
-    } catch {
-      // ignore
-    }
+    } catch {}
   }, [markQr]);
 
   const startPolling = useCallback((botId) => {
@@ -202,8 +195,6 @@ export function DeployModal({ user, onClose, onDeployed }) {
       connectedRef.current = false;
       setQrUrl(null);
       setQrExpired(false);
-      setDeployCompleted(false);
-      // Move to connection screen (will show QR or pairing code)
       setStep("connecting");
       
       connectSse(botId, markConnected);
@@ -214,9 +205,7 @@ export function DeployModal({ user, onClose, onDeployed }) {
           const resp = await botsApi.createPairingCode(botId, phoneInput.replace(/[^0-9]/g, ''));
           setPairCode(resp.code);
           setPairExpiresAt(resp.expiresAt);
-        } catch (e) {
-          // ignore
-        }
+        } catch (e) {}
       }
     } catch (err) {
       setError(err.message);
@@ -226,23 +215,12 @@ export function DeployModal({ user, onClose, onDeployed }) {
     }
   };
 
-  const refreshPairingCode = async () => {
-    if (!botIdRef.current) return;
-    try {
-      const resp = await botsApi.createPairingCode(botIdRef.current, phoneInput.replace(/[^0-9]/g, ''));
-      setPairCode(resp.code);
-      setPairExpiresAt(resp.expiresAt);
-    } catch (e) {
-      setError(e.message || "Could not refresh pairing code.");
-    }
-  };
-
   if (!user?.emailVerified && !user?.email_verified) {
     return (
       <Modal onClose={onClose}>
-        <div style={{ fontSize: "2rem" }}>📧</div>
-        <h3>Verify your email first</h3>
-        <p>Check your inbox for the verification link, then come back to deploy bots.</p>
+        <div style={{ fontSize: "2rem", textAlign: "center" }}>📧</div>
+        <h3 style={{ textAlign: "center" }}>Verify your email first</h3>
+        <p style={{ textAlign: "center", fontSize: "0.875rem", color: "var(--text2)" }}>Check your inbox for the verification link.</p>
         <button className="btn btn-primary w-full" onClick={onClose}>Got it</button>
       </Modal>
     );
@@ -250,243 +228,224 @@ export function DeployModal({ user, onClose, onDeployed }) {
 
   return (
     <Modal onClose={onClose}>
+      <div style={{ width: "100%" }}>
 
-      {/* ── Step 0: Warning ──────────────────────────────────── */}
-      {step === "warning" && (
-        <>
-          <div style={{ fontSize: "2rem" }}>⚠️</div>
-          <h3 style={{ color: "var(--warning)" }}>Before you deploy</h3>
-          <p style={{ fontSize: "0.875rem", color: "var(--text2)", marginBottom: "0.25rem" }}>
-            Please read and acknowledge the following before deploying a WhatsApp bot.
-          </p>
+        {/* Step 0: Warning */}
+        {step === "warning" && (
+          <div>
+            <div style={{ fontSize: "2rem", textAlign: "center" }}>⚠️</div>
+            <h3 style={{ color: "var(--warning)", textAlign: "center", marginBottom: "0.5rem" }}>Before you deploy</h3>
+            <p style={{ fontSize: "0.875rem", color: "var(--text2)", textAlign: "center", marginBottom: "1rem" }}>
+              Please read and acknowledge the following
+            </p>
 
-          <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "0.625rem" }}>
-            {WARNINGS.map((w) => (
-              <div key={w.title} style={{
-                background: "var(--warning-bg)",
-                border: "1px solid rgba(245,158,11,0.2)",
-                borderRadius: "var(--radius)",
-                padding: "0.75rem 1rem",
-                display: "flex",
-                gap: "0.75rem",
-                alignItems: "flex-start"
-              }}>
-                <span style={{ fontSize: "1.1rem", flexShrink: 0 }}>{w.icon}</span>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: "0.8125rem", color: "var(--text)", marginBottom: "0.2rem" }}>
-                    {w.title}
-                  </div>
-                  <div style={{ fontSize: "0.775rem", color: "var(--text2)", lineHeight: 1.5 }}>
-                    {w.desc}
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem", maxHeight: "280px", overflowY: "auto", marginBottom: "1rem" }}>
+              {WARNINGS.map((w) => (
+                <div key={w.title} style={{
+                  background: "var(--warning-bg)",
+                  border: "1px solid rgba(245,158,11,0.2)",
+                  borderRadius: "var(--radius)",
+                  padding: "0.75rem",
+                  display: "flex",
+                  gap: "0.75rem",
+                  alignItems: "flex-start"
+                }}>
+                  <span style={{ fontSize: "1rem", flexShrink: 0 }}>{w.icon}</span>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: "0.8rem", color: "var(--text)", marginBottom: "0.2rem" }}>{w.title}</div>
+                    <div style={{ fontSize: "0.73rem", color: "var(--text2)", lineHeight: 1.45 }}>{w.desc}</div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
-
-          <label style={{
-            width: "100%",
-            display: "flex",
-            alignItems: "flex-start",
-            gap: "0.75rem",
-            padding: "0.875rem",
-            background: "var(--bg2)",
-            border: `1.5px solid ${accepted ? "var(--accent)" : "var(--border)"}`,
-            borderRadius: "var(--radius)",
-            cursor: "pointer",
-          }}>
-            <input
-              type="checkbox"
-              checked={accepted}
-              onChange={(e) => setAccepted(e.target.checked)}
-              style={{ marginTop: "2px", accentColor: "var(--accent)", width: "16px", height: "16px", flexShrink: 0 }}
-            />
-            <span style={{ fontSize: "0.8125rem", color: "var(--text2)", lineHeight: 1.5 }}>
-              I understand that WhatsApp automation is unofficial and may result in my account being banned.
-              I accept full responsibility for how this bot is used, and I will not use it to send spam.
-            </span>
-          </label>
-
-          <div style={{ width: "100%", display: "flex", gap: "0.75rem" }}>
-            <button className="btn btn-secondary" style={{ flex: 1 }} onClick={onClose}>Cancel</button>
-            <button className="btn btn-primary" type="button" disabled={!accepted} onClick={() => setStep("form")} style={{ flex: 1 }}>
-              I understand — Continue
-            </button>
-          </div>
-        </>
-      )}
-
-      {/* ── Step 1: Form (Bot details) ───────────────────────── */}
-      {step === "form" && !showMethodSelect && (
-        <>
-          <div style={{ fontSize: "2rem" }}>🚀</div>
-          <h3>Deploy a new bot</h3>
-
-          <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "0.25rem" }}>
-            <div style={{ fontSize: "0.875rem", fontWeight: 500, color: "var(--text2)" }}>Bot type</div>
-            <div className="deploy-type-grid">
-              {BOT_TYPES.map((t) => (
-                <button key={t.id} type="button" onClick={() => setBotType(t.id)} style={{
-                  padding: "0.875rem",
-                  borderRadius: "var(--radius)",
-                  border: `1.5px solid ${botType === t.id ? "var(--accent)" : "var(--border)"}`,
-                  background: botType === t.id ? "var(--accent-dim)" : "var(--card)",
-                  cursor: "pointer",
-                  textAlign: "left",
-                }}>
-                  <div style={{ fontSize: "1.25rem", marginBottom: "0.25rem" }}>{t.icon}</div>
-                  <div style={{ fontWeight: 700, fontSize: "0.875rem", color: botType === t.id ? "var(--accent)" : "var(--text)", marginBottom: "0.25rem" }}>{t.label}</div>
-                  <div style={{ fontSize: "0.75rem", color: "var(--text3)", lineHeight: 1.4 }}>{t.desc}</div>
-                </button>
               ))}
             </div>
-            <div style={{ fontSize: "0.75rem", color: "var(--text3)", background: "var(--bg)", padding: "0.5rem 0.75rem", borderRadius: "var(--radius)", border: "1px solid var(--border)" }}>
-              ⚠ Bot type cannot be changed after deployment.
+
+            <label style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "flex-start",
+              gap: "0.75rem",
+              padding: "0.75rem",
+              background: "var(--bg2)",
+              border: `1.5px solid ${accepted ? "var(--accent)" : "var(--border)"}`,
+              borderRadius: "var(--radius)",
+              cursor: "pointer",
+              marginBottom: "1rem"
+            }}>
+              <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} style={{ marginTop: "2px", flexShrink: 0 }} />
+              <span style={{ fontSize: "0.73rem", color: "var(--text2)", lineHeight: 1.4 }}>
+                I understand that WhatsApp automation is unofficial and may result in my account being banned.
+                I accept full responsibility.
+              </span>
+            </label>
+
+            <div style={{ display: "flex", gap: "0.75rem", flexDirection: "row", flexWrap: "wrap" }}>
+              <button className="btn btn-secondary" style={{ flex: 1 }} onClick={onClose}>Cancel</button>
+              <button className="btn btn-primary" disabled={!accepted} onClick={() => setStep("form")} style={{ flex: 1 }}>Continue →</button>
             </div>
           </div>
+        )}
 
-          <form onSubmit={handleFormSubmit} style={{ width: "100%", display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-            {error && <Alert type="error">{error}</Alert>}
-            <div className="field">
-              <label className="field-label">Bot name *</label>
-              <input className="input" placeholder={botType === "group" ? "e.g. group-helper" : "e.g. support-bot"} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
-            </div>
-            <div className="field">
-              <label className="field-label">Description (optional)</label>
-              <input className="input" placeholder="What does this bot do?" value={desc} onChange={(e) => setDesc(e.target.value)} />
-            </div>
-            <button type="submit" className="btn btn-primary w-full">Continue to connection method →</button>
-          </form>
-        </>
-      )}
+        {/* Step 1: Bot Details Form */}
+        {step === "form" && !showMethodSelect && (
+          <div>
+            <div style={{ fontSize: "2rem", textAlign: "center" }}>🚀</div>
+            <h3 style={{ textAlign: "center", marginBottom: "1rem" }}>Deploy a new bot</h3>
 
-      {/* ── Step 1.5: Method Selection ───────────────────────── */}
-      {step === "form" && showMethodSelect && (
-        <>
-          <div style={{ fontSize: "2rem" }}>🔌</div>
-          <h3>Choose connection method</h3>
-          
-          <div style={{ display: "flex", gap: "1rem", marginBottom: "1rem" }}>
-            <button className={method === "qr" ? "btn btn-primary" : "btn btn-secondary"} onClick={() => setMethod("qr")} style={{ flex: 1 }}>📱 QR Code</button>
-            <button className={method === "code" ? "btn btn-primary" : "btn btn-secondary"} onClick={() => setMethod("code")} style={{ flex: 1 }}>🔢 Pairing Code (mobile recommended)</button>
-          </div>
-
-          {method === "code" && (
             <div style={{ marginBottom: "1rem" }}>
-              <label className="field-label">Phone number (international format)</label>
-              <input className="input" placeholder="e.g. 628123456789" value={phoneInput} onChange={(e) => setPhoneInput(e.target.value)} />
-              <div style={{ fontSize: "0.75rem", color: "var(--text3)", marginTop: "0.25rem" }}>
-                No + sign, no spaces, no parentheses. Just numbers with country code.
+              <div style={{ fontSize: "0.875rem", fontWeight: 500, color: "var(--text2)", marginBottom: "0.5rem" }}>Bot type</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                {BOT_TYPES.map((t) => (
+                  <button key={t.id} type="button" onClick={() => setBotType(t.id)} style={{
+                    padding: "0.875rem",
+                    borderRadius: "var(--radius)",
+                    border: `1.5px solid ${botType === t.id ? "var(--accent)" : "var(--border)"}`,
+                    background: botType === t.id ? "var(--accent-dim)" : "var(--card)",
+                    cursor: "pointer",
+                    textAlign: "center",
+                    width: "100%"
+                  }}>
+                    <div style={{ fontSize: "1.25rem", marginBottom: "0.25rem" }}>{t.icon}</div>
+                    <div style={{ fontWeight: 700, fontSize: "0.875rem", color: botType === t.id ? "var(--accent)" : "var(--text)" }}>{t.label}</div>
+                    <div style={{ fontSize: "0.7rem", color: "var(--text3)", lineHeight: 1.4 }}>{t.desc}</div>
+                  </button>
+                ))}
+              </div>
+              <div style={{ fontSize: "0.7rem", color: "var(--text3)", background: "var(--bg)", padding: "0.5rem", borderRadius: "var(--radius)", border: "1px solid var(--border)", marginTop: "0.5rem", textAlign: "center" }}>
+                ⚠ Bot type cannot be changed after deployment.
               </div>
             </div>
-          )}
 
-          {error && <Alert type="error">{error}</Alert>}
-
-          <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.5rem" }}>
-            <button className="btn btn-secondary" style={{ flex: 1 }} onClick={() => setShowMethodSelect(false)}>← Back</button>
-            <button className="btn btn-primary" style={{ flex: 1 }} onClick={deployWithMethod} disabled={loading || (method === "code" && !phoneInput)}>
-              {loading ? <><Spinner size="sm" /> Deploying…</> : `Deploy & Connect`}
-            </button>
+            <form onSubmit={handleFormSubmit} style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              {error && <Alert type="error">{error}</Alert>}
+              <div className="field">
+                <label className="field-label">Bot name *</label>
+                <input className="input" placeholder={botType === "group" ? "e.g. group-helper" : "e.g. support-bot"} value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+              </div>
+              <div className="field">
+                <label className="field-label">Description (optional)</label>
+                <input className="input" placeholder="What does this bot do?" value={desc} onChange={(e) => setDesc(e.target.value)} />
+              </div>
+              <button type="submit" className="btn btn-primary w-full">Continue →</button>
+            </form>
           </div>
-        </>
-      )}
+        )}
 
-      {/* ── Step 2: Connection Screen (QR or Pairing Code) ────── */}
-      {step === "connecting" && (
-        <>
-          <div style={{ fontSize: "2rem" }}>{method === "qr" ? "📱" : "🔢"}</div>
-          <h3>{method === "qr" ? "Scan QR Code" : "Enter Pairing Code on Your Phone"}</h3>
-
-          {method === "pairing" || method === "code" ? (
-            // SHOW PAIRING CODE PROMINENTLY
-            <div style={{ textAlign: "center", width: "100%" }}>
-              <div style={{ 
-                fontSize: "3rem", 
-                fontWeight: "bold", 
-                letterSpacing: "0.75rem",
-                background: "linear-gradient(135deg, var(--accent) 0%, #c084fc 100%)",
-                padding: "1.5rem",
-                borderRadius: "var(--radius-xl)",
-                fontFamily: "monospace",
-                color: "white",
-                textShadow: "0 2px 4px rgba(0,0,0,0.2)",
-                marginBottom: "1rem"
-              }}>
-                {pairCode || "──────"}
-              </div>
-              
-              <div style={{ 
-                background: "var(--accent-dim)", 
-                padding: "1rem", 
-                borderRadius: "var(--radius)",
-                marginBottom: "1rem",
-                textAlign: "left"
-              }}>
-                <p style={{ fontWeight: "bold", marginBottom: "0.5rem" }}>📋 Instructions:</p>
-                <ol style={{ marginLeft: "1.25rem", color: "var(--text2)", lineHeight: "1.8" }}>
-                  <li>Open WhatsApp on your <strong>phone</strong></li>
-                  <li>Go to <strong>Settings</strong> (iOS) or <strong>three-dot menu</strong> (Android)</li>
-                  <li>Tap <strong>Linked Devices</strong></li>
-                  <li>Tap <strong>Link with phone number</strong></li>
-                  <li>Enter this code: <strong style={{ color: "var(--accent)", fontSize: "1.1rem" }}>{pairCode || "waiting..."}</strong></li>
-                </ol>
-              </div>
-
-              {pairExpiresAt && (
-                <p style={{ fontSize: "0.875rem", color: "var(--text3)" }}>
-                  ⏱ Code expires: {new Date(pairExpiresAt).toLocaleTimeString()}
-                </p>
-              )}
-              
-              <button className="btn btn-secondary" onClick={refreshPairingCode} style={{ marginTop: "0.5rem" }}>
-                ⟳ Refresh Code
-              </button>
-              <p style={{ fontSize: "0.75rem", color: "var(--text3)", marginTop: "0.75rem" }}>
-                The modal will close automatically once connected
-              </p>
+        {/* Step 1.5: Method Selection */}
+        {step === "form" && showMethodSelect && (
+          <div>
+            <div style={{ fontSize: "2rem", textAlign: "center" }}>🔌</div>
+            <h3 style={{ textAlign: "center", marginBottom: "1rem" }}>Choose connection method</h3>
+            
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", marginBottom: "1rem" }}>
+              <button className={method === "qr" ? "btn btn-primary" : "btn btn-secondary"} onClick={() => setMethod("qr")} style={{ width: "100%", padding: "0.875rem" }}>📱 QR Code</button>
+              <button className={method === "code" ? "btn btn-primary" : "btn btn-secondary"} onClick={() => setMethod("code")} style={{ width: "100%", padding: "0.875rem" }}>🔢 Pairing Code (mobile)</button>
             </div>
-          ) : (
-            // SHOW QR CODE
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.625rem", width: "100%" }}>
-              {qrUrl ? (
-                <>
-                  <p style={{ fontSize: "0.8125rem", color: "var(--text2)", textAlign: "center" }}>
-                    Open WhatsApp → <strong>Linked Devices</strong> → <strong>Link a Device</strong>, then scan:
-                  </p>
-                  <div className="qr-wrap" style={{ position: "relative" }}>
-                    <img src={qrUrl} alt="WhatsApp QR code" style={{ opacity: qrExpired ? 0.35 : 1 }} />
-                    {qrExpired && (
-                      <div style={{
-                        position: "absolute", inset: 0,
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        background: "rgba(0,0,0,0.6)", borderRadius: "var(--radius)"
-                      }}>
-                        <Spinner size="md" />
-                      </div>
-                    )}
-                  </div>
-                  <div style={{ fontSize: "0.75rem", color: "var(--text3)" }}>
-                    Refreshes in {countdown}s · window stays open 10 min
-                  </div>
-                </>
-              ) : (
-                <div style={{ padding: "2rem", textAlign: "center" }}>
-                  <Spinner size="lg" />
-                  <p style={{ marginTop: "1rem", color: "var(--text2)" }}>Generating {method === "qr" ? "QR code" : "pairing code"}…</p>
+
+            {method === "code" && (
+              <div style={{ marginBottom: "1rem" }}>
+                <label className="field-label">Phone number (international format)</label>
+                <input className="input" placeholder="e.g. 628123456789" value={phoneInput} onChange={(e) => setPhoneInput(e.target.value)} />
+                <div style={{ fontSize: "0.7rem", color: "var(--text3)", marginTop: "0.25rem" }}>
+                  No + sign, no spaces. Just numbers with country code.
                 </div>
-              )}
+              </div>
+            )}
+
+            {error && <Alert type="error">{error}</Alert>}
+
+            <div style={{ display: "flex", gap: "0.75rem", flexDirection: "column", marginTop: "0.5rem" }}>
+              <button className="btn btn-secondary" onClick={() => setShowMethodSelect(false)}>← Back</button>
+              <button className="btn btn-primary" onClick={deployWithMethod} disabled={loading || (method === "code" && !phoneInput)} style={{ width: "100%" }}>
+                {loading ? <><Spinner size="sm" /> Deploying…</> : `Deploy & Connect`}
+              </button>
             </div>
-          )}
+          </div>
+        )}
 
-          {error && <Alert type="error">{error}</Alert>}
-          
-          {!deployCompleted && (
-            <button className="btn btn-secondary w-full" onClick={onClose}>Cancel</button>
-          )}
-        </>
-      )}
+        {/* Step 2: Connection Screen (QR or Pairing Code) */}
+        {step === "connecting" && (
+          <div>
+            <div style={{ fontSize: "2rem", textAlign: "center" }}>{method === "qr" ? "📱" : "🔢"}</div>
+            <h3 style={{ textAlign: "center", marginBottom: "1rem", fontSize: "1rem" }}>{method === "qr" ? "Scan QR Code" : "Enter Pairing Code"}</h3>
 
+            {method === "code" ? (
+              <div style={{ textAlign: "center" }}>
+                {pairCode ? (
+                  <>
+                    <div style={{ 
+                      fontSize: "clamp(1.2rem, 7vw, 2rem)", 
+                      fontWeight: "bold", 
+                      letterSpacing: "0.3rem",
+                      background: "linear-gradient(135deg, var(--accent) 0%, #c084fc 100%)",
+                      padding: "0.75rem",
+                      borderRadius: "var(--radius-xl)",
+                      fontFamily: "monospace",
+                      color: "white",
+                      wordBreak: "break-all",
+                      marginBottom: "1rem"
+                    }}>
+                      {pairCode}
+                    </div>
+                    
+                    <div style={{ 
+                      background: "var(--accent-dim)", 
+                      padding: "0.75rem", 
+                      borderRadius: "var(--radius)",
+                      marginBottom: "1rem",
+                      textAlign: "left"
+                    }}>
+                      <p style={{ fontWeight: "bold", marginBottom: "0.5rem", fontSize: "0.8rem" }}>📋 Instructions:</p>
+                      <ol style={{ marginLeft: "1rem", color: "var(--text2)", lineHeight: "1.6", fontSize: "0.7rem" }}>
+                        <li>Open WhatsApp on your <strong>phone</strong></li>
+                        <li>Go to <strong>Settings</strong> → <strong>Linked Devices</strong></li>
+                        <li>Tap <strong>Link with phone number</strong></li>
+                        <li>Enter the 8-digit code above</li>
+                      </ol>
+                    </div>
+
+                    {pairExpiresAt && (
+                      <p style={{ fontSize: "0.7rem", color: "var(--text3)" }}>
+                        ⏱ Expires: {new Date(pairExpiresAt).toLocaleTimeString()}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <div style={{ padding: "1rem", textAlign: "center" }}>
+                    <Spinner size="lg" />
+                    <p style={{ marginTop: "0.5rem", color: "var(--text2)", fontSize: "0.8rem" }}>Generating pairing code...</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{ textAlign: "center" }}>
+                {qrUrl ? (
+                  <>
+                    <p style={{ fontSize: "0.7rem", color: "var(--text2)", marginBottom: "0.5rem" }}>
+                      Open WhatsApp → Linked Devices → Link a Device
+                    </p>
+                    <div className="qr-wrap" style={{ display: "inline-block" }}>
+                      <img src={qrUrl} alt="QR code" style={{ width: "min(180px, 60vw)", height: "auto" }} />
+                    </div>
+                    {qrExpired && (
+                      <p style={{ fontSize: "0.7rem", color: "var(--warning)", marginTop: "0.5rem" }}>⟳ Refreshing QR...</p>
+                    )}
+                  </>
+                ) : (
+                  <div style={{ padding: "1rem", textAlign: "center" }}>
+                    <Spinner size="lg" />
+                    <p style={{ marginTop: "0.5rem", color: "var(--text2)", fontSize: "0.8rem" }}>Generating QR code...</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {error && <Alert type="error" style={{ marginTop: "1rem" }}>{error}</Alert>}
+            
+            <button className="btn btn-secondary w-full" onClick={onClose} style={{ marginTop: "1rem" }}>Cancel</button>
+          </div>
+        )}
+
+      </div>
     </Modal>
   );
 }

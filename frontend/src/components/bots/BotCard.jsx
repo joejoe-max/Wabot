@@ -6,7 +6,6 @@ export function BotCard({ bot, onConfigure, onShowQr, onSendDM, onDelete, deleti
   const hasSalesAgent = bot.sales_agent_config?.enabled;
   const hasKeywords   = Array.isArray(bot.keyword_triggers) && bot.keyword_triggers.length > 0;
 
-  // Determine if bot needs reconnection (disconnected or failed states)
   const needsReconnect = [
     "disconnected", 
     "failed", 
@@ -16,10 +15,8 @@ export function BotCard({ bot, onConfigure, onShowQr, onSendDM, onDelete, deleti
     "awaiting_qr_scan"
   ].includes(bot.status);
 
-  // Bot is ready to send messages
   const canSendDM = bot.status === "connected";
 
-  // Show appropriate action text based on status
   const getReconnectText = () => {
     switch (bot.status) {
       case "connecting":
@@ -84,7 +81,6 @@ export function BotCard({ bot, onConfigure, onShowQr, onSendDM, onDelete, deleti
       </div>
 
       <div className="bot-card-actions" onClick={(e) => e.stopPropagation()}>
-        {/* Show QR / Reconnect button - opens config with QR/pairing tab */}
         {needsReconnect && (
           <button 
             className="btn btn-secondary btn-sm" 
@@ -100,7 +96,6 @@ export function BotCard({ bot, onConfigure, onShowQr, onSendDM, onDelete, deleti
           </button>
         )}
 
-        {/* Send DM button */}
         {canSendDM && onSendDM && (
           <button 
             className="btn btn-success btn-sm" 
@@ -111,7 +106,6 @@ export function BotCard({ bot, onConfigure, onShowQr, onSendDM, onDelete, deleti
           </button>
         )}
 
-        {/* Configure button */}
         <button 
           className="btn btn-secondary btn-sm" 
           style={{ flex: 1 }}
@@ -119,7 +113,6 @@ export function BotCard({ bot, onConfigure, onShowQr, onSendDM, onDelete, deleti
           Configure
         </button>
 
-        {/* Delete button */}
         <button 
           className="btn btn-danger btn-sm"
           disabled={deleting === bot.id}
