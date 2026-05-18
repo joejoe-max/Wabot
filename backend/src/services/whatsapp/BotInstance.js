@@ -195,6 +195,7 @@ export class BotInstance {
     this._onPair   = new Set();
     this._pendingUsage = { messagesThisMonth: 0, totalMessages: 0, lastActivity: null };
     this._pendingLogs  = [];
+    this._isPairingMode = false; // ✅ Flag to prevent QR from overriding pairing mode
 
     /* ── Group management in-memory state ─────────────────── */
     // Strike counts for moderation actions (anti-link/spam/vulgar)
@@ -333,7 +334,7 @@ export class BotInstance {
     }
   }
 
-  /* ── Connection update ────────────────────────────────────── */
+  /* ── Connection update (FIXED: Pairing mode prevents QR) ──── */
 
   async _onConnectionUpdate({ connection, lastDisconnect, qr }) {
     // Clear any outstanding pair codes on open
@@ -342,7 +343,9 @@ export class BotInstance {
         for (const cb of this._onPair) cb(null);
       } catch {}
     }
-    if (qr) {
+    
+    // ✅ SKIP QR if we're in pairing mode - this prevents QR from overriding pairing
+    if (qr && !this._isPairingMode) {
       try {
         this.qrCode = await QRCode.toDataURL(qr);
         for (const cb of this._onQR) cb(this.qrCode);
@@ -357,6 +360,7 @@ export class BotInstance {
       this._clearQrTimeout();
       this._reconnectAttempts = 0;
       this.qrCode = null;
+      this._isPairingMode = false; // ✅ Reset pairing mode on successful connection
       await this._setStatus("connected");
       await this._log("bot_connected", "WhatsApp connection established");
     }
@@ -393,15 +397,24 @@ export class BotInstance {
     }
   }
 
+  /* ── FIXED: requestPairingCode sets pairing mode and status ── */
   async requestPairingCode(phone) {
     if (!this.socket) throw new Error("Bot socket not started.");
     if (!this.socket.requestPairingCode) throw new Error("Pairing not supported by this Baileys version.");
+    
+    // ✅ Set pairing mode flag to prevent QR from taking over
+    this._isPairingMode = true;
+    
+    // ✅ Set status to awaiting_pairing
+    await this._setStatus("awaiting_pairing");
+    
     try {
       const code = await this.socket.requestPairingCode(phone);
       this._lastPairingCode = code; // Store for SSE clients
       for (const cb of this._onPair) cb(code);
       return code;
     } catch (err) {
+      this._isPairingMode = false; // Reset on error
       logger.error({ err, botId: this.botId }, "requestPairingCode failed");
       throw err;
     }
@@ -1408,4 +1421,4 @@ export class BotInstance {
     });
     this._scheduleLogFlush();
   }
-  }
+            }
