@@ -1084,7 +1084,7 @@ Reply with any command to get started.`}
                     try {
                       await botsApi.reconnect(bot.id);
                       setReconnectMsg("✓ Reconnect initiated — a QR code will appear shortly.");
-                      setBot((b) => ({ ...b, status: "connecting" }));
+                      // Do not set status locally — wait for server SSE to update real status
                     } catch (err) {
                       setReconnectMsg(err.message ?? "Reconnect failed. Please try again.");
                     } finally {

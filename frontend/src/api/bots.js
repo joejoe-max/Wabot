@@ -12,6 +12,9 @@ export const botsApi = {
   /* QR / SSE */
   qr:              (id)                     => apiFetch(`/bots/${id}/qr`),
   groups:          (id)                     => apiFetch(`/bots/${id}/groups`),
+  createPairingCode: (id, phone)            => apiFetch(`/bots/${id}/request-pairing`, { method: "POST", body: JSON.stringify({ phone }) }),
+  getPairingCode:    (id, code)             => apiFetch(`/bots/${id}/pairing-code/${code}`),
+  claimPairingCode:  (id, code, session)    => apiFetch(`/bots/${id}/pairing-code/${code}/claim`, { method: "POST", body: JSON.stringify({ session_data: session }) }),
   eventsUrl:       (id, token) => {
     return `${BASE}/bots/${id}/events?token=${encodeURIComponent(token || "")}`;
   },

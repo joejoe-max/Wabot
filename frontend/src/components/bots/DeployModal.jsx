@@ -62,6 +62,11 @@ export function DeployModal({ user, onClose, onDeployed }) {
   const [qrUrl,        setQrUrl]        = useState(null);
   const [countdown,    setCountdown]    = useState(QR_LIFE_S);
   const [qrExpired,    setQrExpired]    = useState(false);  /* true when countdown hits 0 */
+  const [method, setMethod] = useState("qr"); // qr | code
+  const [pairCode, setPairCode] = useState(null);
+  const [pairExpiresAt, setPairExpiresAt] = useState(null);
+  const [phoneInput, setPhoneInput] = useState("");
+  const [claiming, setClaiming] = useState(false);
 
   const esRef          = useRef(null);
   const timeoutRef     = useRef(null);
@@ -151,6 +156,14 @@ export function DeployModal({ user, onClose, onDeployed }) {
       try {
         const msg = JSON.parse(e.data);
         if (msg.type === "qr")     markQr(msg.qrUrl);
+        if (msg.type === "pair_code") {
+          // pair code may be a string or an object
+          if (typeof msg.code === "string") setPairCode(msg.code);
+          else if (msg.code && typeof msg.code === "object") {
+            setPairCode(msg.code.code ?? null);
+            setPairExpiresAt(msg.code.expiresAt ?? null);
+          }
+        }
         if (msg.type === "status") {
           if (msg.status === "connected") onConn(es);
         }
@@ -180,14 +193,32 @@ export function DeployModal({ user, onClose, onDeployed }) {
     if (!name.trim()) return setError("Bot name is required.");
     setError(""); setLoading(true);
     try {
-      const data = await botsApi.deploy({ botName: name.trim(), description: desc.trim(), botType });
+      const data = await botsApi.deploy({ botName: name.trim(), description: desc.trim(), botType, method });
       const botId = data.bot.id;
+      // If backend returned a pairing code from deploy, show it immediately
+      if (data.pairing?.code) {
+        setPairCode(data.pairing.code);
+        if (data.pairing.expiresAt) setPairExpiresAt(data.pairing.expiresAt);
+        setMethod("code");
+      }
       connectedRef.current = false;
       setQrUrl(null);
       setQrExpired(false);
+      // Show connection method choice (QR or pairing code)
       setStep("qr");
+      // Start SSE for live updates regardless of method
       connectSse(botId, markConnected);
       startPolling(botId);
+      // If pairing code chosen, pre-create a pairing code (only if not returned by deploy)
+      if (method === "code" && !pairCode) {
+        try {
+          const resp = await botsApi.createPairingCode(botId, phoneInput);
+          setPairCode(resp.code);
+          setPairExpiresAt(resp.expiresAt);
+        } catch (e) {
+          // ignore — user can still use QR
+        }
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -350,9 +381,59 @@ export function DeployModal({ user, onClose, onDeployed }) {
       {step === "qr" && (
         <>
           <div style={{ fontSize: "2rem" }}>📱</div>
-          <h3>Scan to connect</h3>
+          <h3>Connect your number</h3>
 
-          {qrUrl ? (
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <button className={method === "qr" ? "btn btn-primary" : "btn btn-ghost"} onClick={() => setMethod("qr")}>QR code</button>
+            <button className={method === "code" ? "btn btn-primary" : "btn btn-ghost"} onClick={() => setMethod("code")}>Pairing code (mobile recommended)</button>
+          </div>
+
+          {method === "code" && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: "0.9rem", color: "var(--text2)", marginBottom: 8 }}>
+                Enter the phone number you will pair from (international format). An 8-digit code will be generated and shown below — open WhatsApp on your phone and enter the code in the pairing flow.
+              </div>
+              <input className="input" placeholder="+15551234567" value={phoneInput} onChange={(e) => setPhoneInput(e.target.value)} />
+              <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+                <button className="btn btn-primary" onClick={async () => {
+                  if (!botIdRef.current) return;
+                  setPairCode(null); setPairExpiresAt(null);
+                  try {
+                    const resp = await botsApi.createPairingCode(botIdRef.current, phoneInput);
+                    setPairCode(resp.code); setPairExpiresAt(resp.expiresAt);
+                  } catch (e) { setError(e.message || "Could not create pairing code."); }
+                }}>Generate code</button>
+                <button className="btn btn-ghost" onClick={() => { setPairCode(null); setPhoneInput(""); }}>Reset</button>
+              </div>
+
+              {pairCode && (
+                <div className="card" style={{ marginTop: 12, textAlign: "center" }}>
+                  <div style={{ fontSize: "1.5rem", fontWeight: 700, letterSpacing: "0.2rem" }}>{pairCode}</div>
+                  <div style={{ color: "var(--text3)", marginTop: 6 }}>Expires: {new Date(pairExpiresAt).toLocaleTimeString()}</div>
+                  <div style={{ marginTop: 8 }}>
+                    <button className="btn btn-primary" onClick={async () => {
+                      if (!botIdRef.current || !pairCode) return;
+                      setClaiming(true);
+                      try {
+                        // In a real flow the bot would write session data; here we simulate claim
+                        await botsApi.claimPairingCode(botIdRef.current, pairCode, { simulated: true }).catch(() => {});
+                        // After claiming, poll bot status via SSE/poll — if connected, markConnected will run
+                      } catch (e) { setError(e.message || "Could not claim pairing code."); }
+                      setClaiming(false);
+                    }}>{claiming ? "Claiming…" : "Mark as paired"}</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {method === "qr" && (
+            <>
+              <h3 style={{ display: "none" }}>Scan to connect</h3>
+            </>
+          )}
+
+          {method === "qr" && qrUrl && (
             /* ── QR available ── */
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.625rem", width: "100%" }}>
               <p style={{ fontSize: "0.8125rem", color: "var(--text2)", textAlign: "center", margin: 0 }}>
@@ -424,7 +505,9 @@ export function DeployModal({ user, onClose, onDeployed }) {
                 The QR code rotates every ~60 s. If it expires, a new one loads automatically.
               </div>
             </div>
-          ) : (
+          )}
+
+          {method === "qr" && !qrUrl && (
             /* ── Waiting for first QR ── */
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.875rem", padding: "1.5rem" }}>
               <Spinner size="lg" />

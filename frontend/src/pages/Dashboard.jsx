@@ -13,8 +13,10 @@ import { ApiKeys } from "./dashboard/ApiKeys.jsx";
 import { Billing } from "./dashboard/Billing.jsx";
 import { Settings } from "./dashboard/Settings.jsx";
 import { ResendVerificationModal } from "../components/auth/ResendVerificationModal.jsx";
+import Admin from "./Admin.jsx";  // ← ADD THIS LINE
 
-const TABS = [
+// Base tabs for all users
+const BASE_TABS = [
   { id: "overview", icon: "⊞", label: "Overview" },
   { id: "conversations", icon: "💬", label: "Conversations" },
   { id: "bots", icon: "🤖", label: "Bots" },
@@ -23,6 +25,9 @@ const TABS = [
   { id: "billing", icon: "💳", label: "Billing" },
   { id: "settings", icon: "⚙", label: "Settings" },
 ];
+
+// Admin-only tab - only shown to superadmins
+const ADMIN_TAB = { id: "admin", icon: "🛡️", label: "Admin" };
 
 const EXTERNAL_LINKS = [{ href: "/docs", icon: "📖", label: "API Docs" }];
 
@@ -44,6 +49,12 @@ export default function Dashboard() {
   const user = data.user ?? auth.user;
   const emailVerified = user?.emailVerified ?? user?.email_verified;
   const userEmail = user?.email ?? user?.email_address;
+  
+  // Check if user is superadmin (from the /me endpoint)
+  const isSuperAdmin = user?.isSuperAdmin === true;
+
+  // Build tabs dynamically - add Admin tab only for superadmins
+  const TABS = isSuperAdmin ? [...BASE_TABS, ADMIN_TAB] : BASE_TABS;
 
   /* Switch to billing tab if redirected back from Paystack checkout */
   useEffect(() => {
@@ -54,7 +65,7 @@ export default function Dashboard() {
     }
   }, []);
 
-  /* Open verification modal for unverified users (dashboard is reachable even if unverified). */
+  /* Open verification modal for unverified users */
   useEffect(() => {
     if (emailVerified === false) setShowVerifyModal(true);
   }, [emailVerified]);
@@ -74,7 +85,7 @@ export default function Dashboard() {
       if (url) window.location.href = url;
     } catch (err) {
       setUpgradeError(err.message ?? "Could not start checkout. Please try again.");
-      throw err; /* re-throw so Billing.jsx can catch 503 and show the popup */
+      throw err;
     } finally {
       setUpgrading(false);
     }
@@ -86,7 +97,7 @@ export default function Dashboard() {
       const { url } = await billingApi.portal();
       if (url) window.location.href = url;
     } catch (err) {
-      throw err; /* let Billing.jsx show the inline error */
+      throw err;
     } finally {
       setManaging(false);
     }
@@ -223,6 +234,7 @@ export default function Dashboard() {
           {tab === "settings" && (
             <Settings user={user} onUserUpdated={(updated) => auth.patchUser(updated)} />
           )}
+          {tab === "admin" && <Admin />}  {/* ← ADD THIS LINE */}
         </div>
       </main>
     </div>

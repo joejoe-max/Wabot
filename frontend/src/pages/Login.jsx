@@ -46,14 +46,34 @@ export default function Login() {
 
           <div className="field">
             <label className="field-label" htmlFor="email">Email address</label>
-            <input id="email" type="email" className="input" placeholder="you@example.com"
-              value={form.email} onChange={set("email")} required autoComplete="email" />
+            <input 
+              id="email" 
+              type="email" 
+              className="input" 
+              placeholder="you@example.com"
+              value={form.email} 
+              onChange={set("email")} 
+              required 
+              autoComplete="email" 
+            />
           </div>
 
           <div className="field">
             <label className="field-label" htmlFor="password">Password</label>
-            <input id="password" type="password" className="input" placeholder="••••••••"
-              value={form.password} onChange={set("password")} required autoComplete="current-password" />
+            <input 
+              id="password" 
+              type="password" 
+              className="input" 
+              placeholder="••••••••"
+              value={form.password} 
+              onChange={set("password")} 
+              required 
+              autoComplete="current-password" 
+            />
+          </div>
+
+          <div className="forgot-password-link">
+            <Link to="/forgot-password">Forgot password?</Link>
           </div>
 
           <button type="submit" className="btn btn-primary w-full" disabled={loading} style={{ marginTop: "0.25rem" }}>

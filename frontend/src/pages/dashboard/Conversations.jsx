@@ -44,6 +44,23 @@ export function Conversations() {
   const open = (c) => setSelected(c);
   const close = () => { setSelected(null); setReply(""); setResult(null); };
 
+  const fileRef = useRef(null);
+
+  // Fetch thread when a conversation is selected (simple implementation)
+  useEffect(() => {
+    if (!selected) return;
+    let mounted = true;
+    // Try to fetch recent messages for this conversation via activity (backend stores message_received entries)
+    botsApi.v1Conversations(undefined, 200, 0).then((d) => {
+      if (!mounted) return;
+      const thread = (d.conversations || []).filter((m) => m.id === selected.id || (m.metadata && m.metadata.from === selected.metadata?.from));
+      setReply(""); setResult(null);
+      // Attach thread to selected for preview
+      setSelected((s) => ({ ...s, thread }));
+    }).catch(() => {});
+    return () => { mounted = false; };
+  }, [selected?.id]);
+
   const isGroupConv = (c) => {
     if (c?.metadata?.isGroup !== undefined) return Boolean(c.metadata.isGroup);
     if (c?.metadata?.from) return String(c.metadata.from).includes("@g.") || String(c.metadata.from).includes("@g.us");
@@ -118,10 +135,24 @@ export function Conversations() {
     if (!selected) return;
     setSending(true); setResult(null);
     const to = selected.metadata?.from ?? selected.details;
-    const msg = (reply || selected.metadata?.preview || "").toString();
+    const textMsg = (reply || selected.metadata?.preview || "").toString();
     try {
-      // Use non-persistent dashboard send so we don't create DB activity here
-      await botsApi.sendDM(selected.bot_id, { to, message: msg });
+      // If file selected, send as media
+      const file = fileRef.current?.files?.[0];
+      if (file) {
+        // Upload file to backend (not implemented: we will send via data URL inline for now)
+        const reader = await new Promise((resolve, reject) => {
+          const r = new FileReader();
+          r.onload = () => resolve(r.result);
+          r.onerror = reject;
+          r.readAsDataURL(file);
+        });
+        // Send media payload to server (backend supports media.url as data URL)
+        await botsApi.sendDM(selected.bot_id, { to, message: { media: { type: file.type.startsWith("image") ? "image" : "document", url: reader, caption: textMsg, fileName: file.name, mimetype: file.type } } });
+      } else {
+        // Use non-persistent dashboard send so we don't create DB activity here
+        await botsApi.sendDM(selected.bot_id, { to, message: textMsg });
+      }
       setResult({ ok: true, text: "Reply sent" });
       // remove from visible list until a new incoming message arrives
       dismiss(selected.id);
@@ -186,6 +217,11 @@ export function Conversations() {
             <div className="field">
               <label className="field-label">Reply</label>
               <textarea className="input" rows={5} value={reply} onChange={(e) => setReply(e.target.value)} />
+            </div>
+
+            <div className="field">
+              <label className="field-label">Attach image / file</label>
+              <input ref={fileRef} type="file" accept="image/*,video/*,application/pdf" />
             </div>
 
             {result && <div className={result.ok ? "alert alert-success" : "alert alert-error"} style={{ marginBottom: 8 }}>{result.text}</div>}
