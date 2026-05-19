@@ -1,282 +1,233 @@
-import express         from "express";
-import cors            from "cors";
-import helmet          from "helmet";
-import compression     from "compression";
-import hpp             from "hpp";
-import path            from "node:path";
-import { fileURLToPath } from "node:url";
+// index.js
+import express   from 'express';
+import qrcode    from 'qrcode-terminal';
+import 'dotenv/config';
 
-import { env }         from "./config/env.js";
-import { logger }      from "./utils/logger.js";
-import { apiLimiter }  from "./middleware/rateLimiter.js";
-import { botManager }  from "./services/whatsapp/BotManager.js";
-import { dashboardRealtime } from "./services/realtime/DashboardRealtime.js";
-import authRouter      from "./routes/auth.js";
-import botRouter       from "./routes/bots.js";
-import billingRouter   from "./routes/billing.js";
-import v1Router        from "./routes/v1.js";
-import adminRouter     from "./routes/admin.js";
-import { supabase }    from "./lib/supabase.js";
+import { initSession, getSocket } from './session.js';
+import { startScheduler }         from './scheduler.js';
+import { handleCommand }          from './commands.js';
+import { checkAntiLink, checkAntiVulgar } from './anti.js';
+import { normalizeJid }           from './utils.js';
+import { isAdmin, isBotAdmin }    from './auth.js';
+import { Boom }                   from '@hapi/boom';
+import { clearSession }           from './db.js';
 
-const __dirname     = path.dirname(fileURLToPath(import.meta.url));
-const FRONTEND_DIST = path.resolve(__dirname, "../../frontend/dist");
-const IS_PROD       = env.isProd;
-
-function normalizeOrigin(value) {
-  try {
-    return new URL(value).origin;
-  } catch {
-    return null;
-  }
-}
-
-function isAllowedOrigin(origin, allowedOrigins) {
-  const normalizedOrigin = normalizeOrigin(origin);
-  if (!normalizedOrigin) return false;
-
-  return allowedOrigins.some((entry) => {
-    if (!entry) return false;
-    if (entry === "*") return true;
-
-    const normalizedEntry = normalizeOrigin(entry);
-    if (normalizedEntry) return normalizedOrigin === normalizedEntry;
-
-    try {
-      const hostname = new URL(normalizedOrigin).hostname;
-      if (entry.startsWith("*.")) {
-        const suffix = entry.slice(2).toLowerCase();
-        return hostname === suffix || hostname.endsWith(`.${suffix}`);
-      }
-      return hostname === entry.toLowerCase();
-    } catch {
-      return false;
-    }
-  });
-}
-
-/* ── App ──────────────────────────────────────────────────────── */
 const app = express();
-app.set("trust proxy", 1);
-app.disable("x-powered-by");
+let isConnected       = false;
+let reconnectAttempts = 0;
+let schedulerStarted  = false; // ✅ FIX: guard so startScheduler never fires twice
 
-/* ── Security headers ─────────────────────────────────────────── */
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" },
-  contentSecurityPolicy: IS_PROD ? {
-    directives: {
-      defaultSrc:  ["'self'"],
-      scriptSrc:   ["'self'", "'unsafe-inline'"],
-      styleSrc:    ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-      fontSrc:     ["'self'", "https://fonts.gstatic.com"],
-      imgSrc:      ["'self'", "data:", "blob:"],
-      connectSrc:  ["'self'", ...env.allowedOrigins.split(",").map(o => o.trim()).filter(Boolean)]
-    }
-  } : false
-}));
+const MAX_RECONNECT_ATTEMPTS  = 12;
+const BASE_RECONNECT_DELAY_MS = 10_000;
 
-app.use(compression());
-app.use(hpp());
+// ────────────────────────────────────────────────
+// Web routes
+// ────────────────────────────────────────────────
 
-/* ── CORS — always enabled (frontend can be on a separate server) */
-const allowedOrigins = env.allowedOrigins.split(",").map((o) => o.trim()).filter(Boolean);
-
-app.use(cors({
-  origin(origin, cb) {
-    if (!origin) return cb(null, true);
-    if (isAllowedOrigin(origin, allowedOrigins)) {
-      return cb(null, true);
-    }
-    if (!IS_PROD && (
-      origin.includes("localhost") ||
-      origin.includes("127.0.0.1") ||
-      origin.includes(".replit.dev") ||
-      origin.includes(".repl.co")
-    )) return cb(null, true);
-    logger.warn({ origin }, "CORS blocked origin");
-    cb(new Error(`Origin not allowed: ${origin}`));
-  },
-  credentials:    true,
-  methods:        ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
-  exposedHeaders: ["X-RateLimit-Limit", "X-RateLimit-Remaining"],
-  maxAge:         600
-}));
-
-/* ── Body parsing (bypass for Paystack raw webhook — needs raw body for HMAC) */
-app.use((req, res, next) => {
-  if (req.originalUrl === "/api/billing/webhook") return next();
-  express.json({ limit: "256kb" })(req, res, next);
-});
-
-/* ── General rate limit ───────────────────────────────────────── */
-app.use("/api", apiLimiter);
-
-/* ── Health ───────────────────────────────────────────────────── */
-function sendHealth(_req, res) {
-  return res.json({
-    ok:      true,
-    service: "wabot-api",
-    env:     env.nodeEnv,
-    ts:      Date.now(),
-    configured: {
-      jwt:          env.hasJwt,
-      supabase:     env.hasSupabase,
-      email:        env.hasBrevo,
-      paystack:     env.hasPaystack,
-      superadmin:   env.hasSuperadmin
-    }
-  });
-}
-
-app.get("/health", sendHealth);
-app.get("/api/health", sendHealth);
-
-/* ── API Routes ───────────────────────────────────────────────── */
-app.use("/api/auth",    authRouter);
-app.use("/api/bots",    botRouter);
-app.use("/api/billing", billingRouter);
-app.use("/api/v1",      v1Router);
-app.use("/api/admin",   adminRouter);
-
-/* ── Serve frontend in production (same-server mode) ─────────── */
-if (IS_PROD) {
-  app.use(express.static(FRONTEND_DIST, {
-    maxAge: "1y", immutable: true, index: false,
-    setHeaders(res, filePath) {
-      if (filePath.endsWith(".html")) {
-        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-      }
-    }
-  }));
-  app.get("*", (_req, res) => {
-    res.sendFile(path.join(FRONTEND_DIST, "index.html"), (err) => {
-      if (err) res.status(500).send("Application error — frontend not built.");
-    });
-  });
-} else {
-  app.use((_req, res) => res.status(404).json({ error: "Route not found." }));
-}
-
-/* ── Global error handler ─────────────────────────────────────── */
-app.use((err, _req, res, _next) => {
-  if (err.message?.startsWith("Origin not allowed"))
-    return res.status(403).json({ error: "CORS: origin not allowed." });
-  logger.error({ err }, "Unhandled error");
-  res.status(err.status || 500).json({
-    error: IS_PROD ? "Internal server error." : err.message
-  });
-});
-
-/* ── Process-level safety net (prevent cold-start crashes) ─────── */
-process.on("uncaughtException", (err) => {
-  logger.error({ err }, "Uncaught exception — process continuing");
-});
-process.on("unhandledRejection", (reason) => {
-  logger.error({ reason }, "Unhandled promise rejection — process continuing");
-});
-
-/* ── Monthly counter reset job ───────────────────────────────── */
-async function resetMonthlyCounters() {
-  try {
-    const now = new Date();
-    const firstOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    
-    const { data: users, error } = await supabase
-      .from("users")
-      .select("id, billing_period_start, messages_this_month, plan_tier")
-      .lt("billing_period_start", firstOfMonth.toISOString());
-    
-    if (error) {
-      logger.error({ error }, "Failed to fetch users for monthly reset");
-      return;
-    }
-    
-    if (!users || users.length === 0) return;
-    
-    let resetCount = 0;
-    for (const user of users) {
-      const { error: updateError } = await supabase
-        .from("users")
-        .update({ 
-          messages_this_month: 0, 
-          billing_period_start: now.toISOString() 
-        })
-        .eq("id", user.id);
-      
-      if (updateError) {
-        logger.error({ userId: user.id, error: updateError }, "Failed to reset monthly counter");
-      } else {
-        resetCount++;
-        logger.info({ userId: user.id, plan: user.plan_tier, oldCount: user.messages_this_month }, "Monthly message counter reset");
-      }
-    }
-    
-    if (resetCount > 0) {
-      logger.info({ resetCount }, "Monthly counters reset successfully");
-    }
-  } catch (err) {
-    logger.error({ err }, "Monthly reset job failed");
-  }
-}
-
-/* ── Graceful shutdown ───────────────────────────────────────── */
-async function gracefulShutdown(signal) {
-  logger.info(`${signal} received — starting graceful shutdown`);
-  
-  // Stop all bot instances
-  const stopPromises = [];
-  for (const [botId, instance] of botManager.instances) {
-    logger.info({ botId }, "Stopping bot instance");
-    stopPromises.push(instance.stop().catch(err => 
-      logger.error({ err, botId }, "Error stopping bot during shutdown")
-    ));
-  }
-  
-  await Promise.all(stopPromises);
-  
-  // Close SSE connections
-  for (const [botId, clients] of botManager.sseClients) {
-    for (const res of clients) {
-      try { res.end(); } catch {}
-    }
-    botManager.sseClients.delete(botId);
-  }
-  
-  logger.info("Graceful shutdown complete");
-  process.exit(0);
-}
-
-process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
-process.on("SIGINT", () => gracefulShutdown("SIGINT"));
-
-/* ── Start ────────────────────────────────────────────────────── */
-const PORT = Number(process.env.PORT || env.port || 3000);
-
-app.listen(PORT, "0.0.0.0", async () => {
-  logger.info(`✓ WaBot API ready on port ${PORT} [${env.nodeEnv}]`);
-  logger.info(`✓ CORS origins: ${allowedOrigins.join(", ") || "(all in dev)"}`);
-  logger.info(`✓ Superadmin: ${env.hasSuperadmin ? "configured" : "NOT SET — /api/admin disabled"}`);
-  logger.info(`✓ Pairing codes: ${env.hasSupabase ? "enabled (Baileys native)" : "disabled — Supabase required"}`);
-
-  if (env.hasSupabase) {
-    try {
-      await dashboardRealtime.initialize();
-      logger.info("✓ Dashboard realtime initialized");
-      await botManager.initialize();
-      logger.info("✓ BotManager initialized — bots will auto-reconnect with saved sessions");
-      
-      // Run monthly counter reset on startup
-      await resetMonthlyCounters();
-      logger.info("✓ Monthly counter reset job completed on startup");
-      
-      // Schedule to run every hour to catch month transitions
-      setInterval(resetMonthlyCounters, 60 * 60 * 1000);
-      logger.info("✓ Monthly counter reset scheduled (every hour)");
-      
-    } catch (err) {
-      logger.error({ err }, "Startup initialization failed");
-    }
+app.get('/', (req, res) => {
+  const sock = getSocket();
+  if (isConnected) {
+    res.send('<h1>✅ WhatsApp Bot is Connected</h1>');
+  } else if (sock?.qrString) {
+    // ✅ FIX: JSON.stringify escapes all special characters in the QR string so the
+    //         embedded JS literal is always valid (old code could break on backslashes).
+    const safeQr = JSON.stringify(sock.qrString);
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head><title>WhatsApp Bot — Scan QR</title></head>
+      <body style="font-family:sans-serif;text-align:center;padding:40px">
+        <h1>Scan QR to Link WhatsApp</h1>
+        <div id="qrcode" style="display:inline-block"></div>
+        <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+        <script>
+          const qr = ${safeQr};
+          const canvas = document.createElement('canvas');
+          QRCode.toCanvas(canvas, qr, { width: 300 }, (err) => {
+            if (!err) document.getElementById('qrcode').appendChild(canvas);
+          });
+        </script>
+      </body>
+      </html>
+    `);
   } else {
-    logger.warn("Supabase not configured — BotManager and pairing codes skipped");
+    res.send('<h1>⏳ Bot is starting — no QR code yet. Refresh in a few seconds.</h1>');
   }
 });
+
+app.get('/health', (req, res) => {
+  res.json({
+    status:           isConnected ? 'connected' : 'disconnected',
+    uptimeSeconds:    Math.floor(process.uptime()),
+    reconnectAttempts,
+    schedulerStarted,
+    qrActive:         !!getSocket()?.qrString && !isConnected,
+    timestamp:        new Date().toISOString(),
+  });
+});
+
+// ────────────────────────────────────────────────
+// Bot lifecycle
+// ────────────────────────────────────────────────
+
+async function startBot() {
+  try {
+    console.log('🔄 Starting WhatsApp connection attempt...');
+    const sock = await initSession();
+
+    // ── Incoming messages ─────────────────────────────────────────
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+      // ✅ FIX: 'notify' = real-time message; 'append' = history sync — only handle notify
+      if (type !== 'notify') return;
+
+      const msg = messages[0];
+      if (!msg?.message)  return; // ✅ FIX: guard against empty message objects
+      if (msg.key.fromMe) return; // ✅ FIX: ignore messages sent by the bot itself
+
+      const remoteJid = msg.key.remoteJid;
+      if (!remoteJid)     return;
+
+      // ✅ FIX: properly distinguish group chats from DMs
+      const isGroup = remoteJid.endsWith('@g.us');
+
+      // ✅ FIX: group messages carry the real sender in key.participant,
+      //         DM messages use remoteJid as the sender
+      const senderJid = normalizeJid(
+        isGroup ? (msg.key.participant || remoteJid) : remoteJid
+      );
+
+      const text = (
+        msg.message?.conversation              ||
+        msg.message?.extendedTextMessage?.text ||
+        msg.message?.imageMessage?.caption     ||
+        msg.message?.videoMessage?.caption     ||
+        ''
+      ).trim();
+
+      if (isGroup) {
+        // ── Group-specific path ─────────────────────────────────
+        // ✅ FIX: isBotAdmin was previously called for DMs too, which
+        //         would error or silently drop all DM messages
+        const botIsAdmin = await isBotAdmin(sock, remoteJid);
+        if (!botIsAdmin) return;
+
+        const isAdminFlag = await isAdmin(sock, remoteJid, senderJid);
+
+        // Moderation runs for everyone (admins are exempt inside these functions)
+        await checkAntiLink  (text, isAdminFlag, remoteJid, senderJid, sock);
+        await checkAntiVulgar(msg,  isAdminFlag, remoteJid, senderJid, sock);
+
+        // Group commands only for admins
+        if (isAdminFlag) {
+          await handleCommand(sock, msg);
+        }
+      } else {
+        // ── DM path ─────────────────────────────────────────────
+        // ✅ FIX: DM commands now always reach handleCommand;
+        //         no admin check needed for personal chats
+        await handleCommand(sock, msg);
+      }
+    });
+
+    // ── Connection state ──────────────────────────────────────────
+    sock.ev.on('connection.update', async (update) => {
+      const { connection, lastDisconnect, qr } = update;
+
+      if (qr) {
+        sock.qrString = qr;
+        qrcode.generate(qr, { small: true });
+      }
+
+      if (connection === 'open') {
+        console.log('🎉 Connected to WhatsApp');
+        isConnected       = true;
+        reconnectAttempts = 0;
+        // ✅ FIX: scheduler was re-started on every reconnect, creating duplicate jobs
+        if (!schedulerStarted) {
+          schedulerStarted = true;
+          startScheduler();
+        }
+      }
+
+      if (connection === 'close') {
+        isConnected = false;
+
+        const statusCode = (lastDisconnect?.error instanceof Boom)
+          ? lastDisconnect.error.output?.statusCode
+          : (lastDisconnect?.error?.statusCode ?? 'unknown');
+
+        console.warn(`⚠️  Connection closed (code: ${statusCode})`);
+
+        if (statusCode === 401) {
+          // ✅ FIX: 401 = logged out — clear the stored session so the next
+          //         start creates a fresh one, but do NOT auto-reconnect
+          //         (there is no valid session to reconnect to)
+          console.error('❌ Logged out from WhatsApp. Clearing session...');
+          try {
+            await clearSession();
+            console.log('🗑  Session cleared. Restart the process to re-authenticate.');
+          } catch (e) {
+            console.error('Failed to clear session:', e.message);
+          }
+          return; // ✅ FIX: was falling through to handleReconnect() before
+        }
+
+        // Any other disconnect is transient — schedule a retry
+        console.log('🔄 Transient disconnect — scheduling reconnect...');
+        handleReconnect();
+      }
+    });
+
+  } catch (err) {
+    console.error('❌ Failed to start bot:', err.message || err);
+    handleReconnect();
+  }
+}
+
+function handleReconnect() {
+  if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    console.error(`🛑 Reached max reconnect attempts (${MAX_RECONNECT_ATTEMPTS}). Giving up.`);
+    return;
+  }
+  reconnectAttempts++;
+  const delay = Math.min(
+    BASE_RECONNECT_DELAY_MS * (1.6 ** (reconnectAttempts - 1)),
+    600_000  // cap at 10 minutes
+  );
+  console.log(`🔁 Reconnect attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS} in ${Math.round(delay / 1000)}s`);
+  setTimeout(startBot, delay);
+}
+
+// ────────────────────────────────────────────────
+// Shutdown & error handling
+// ────────────────────────────────────────────────
+
+process.on('SIGINT', async () => {
+  console.log('\nSIGINT received — shutting down gracefully');
+  const sock = getSocket();
+  if (sock) {
+    try { await sock.logout(); }
+    catch (e) { console.error('Logout failed:', e.message); }
+  }
+  process.exit(0);
+});
+
+process.on('SIGTERM', () => process.exit(0));
+
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION:', err);
+  isConnected = false;
+  handleReconnect();
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled rejection:', reason);
+});
+
+// ────────────────────────────────────────────────
+// Start
+// ────────────────────────────────────────────────
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🚀 Server listening on port ${PORT}`));
+startBot();
