@@ -266,27 +266,12 @@ router.post("/deploy", deployLimiter, async (req, res) => {
     return res.status(500).json({ error: "Could not create bot. Please try again." });
   }
 
-  let pairingCode = null;
-  let pairingExpiresAt = null;
   try {
-    // Start the instance
+    // Start the WhatsApp instance asynchronously — pairing/QR will be handled
+    // by the frontend via SSE and the dedicated /request-pairing endpoint.
     await botManager.deploy(bot.id, userId, { plan_tier: plan, bot_type: botType });
-
-    // If the frontend asked for phone+code pairing during deploy, kick off the native pairing code flow.
-    const method = String(req.body?.method ?? "").toLowerCase();
-    const phone = String(req.body?.phone ?? "").trim();
-    
-    if (method === "code" && phone) {
-      try {
-        // Use retry logic for pairing code request
-        pairingCode = await requestPairingCodeWithRetry(bot.id, phone);
-        pairingExpiresAt = new Date(Date.now() + 2 * 60 * 1000).toISOString();
-      } catch (err) {
-        logger.warn({ err, botId: bot.id, phone }, "Could not request pairing code during deploy");
-      }
-    }
   } catch (err) {
-    // Deploy/start failed — log and continue. The bot row was created so frontend can still show the record.
+    // Deploy/start failed — log and continue. Bot row was created so frontend can show the record.
     logger.error({ err, botId: bot.id }, "botManager.deploy failed during deploy route");
   }
 
@@ -295,9 +280,7 @@ router.post("/deploy", deployLimiter, async (req, res) => {
     details: `Bot "${botName}" (${botType}) deployed — waiting for QR scan`
   }).catch(() => {});
 
-  const payload = { bot };
-  if (pairingCode) payload.pairing = { code: pairingCode, expiresAt: pairingExpiresAt };
-  return res.status(201).json(payload);
+  return res.status(201).json({ bot });
 });
 
 /* ── GET /api/bots/:id/events (SSE) ─────────────────────────── */

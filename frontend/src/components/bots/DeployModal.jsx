@@ -188,6 +188,7 @@ export function DeployModal({ user, onClose, onDeployed }) {
     setLoading(true);
     setError("");
     codeReceivedRef.current = false;
+    connectedRef.current = false;
     setPairCode(null);
     setConnectionStep("waiting");
 
@@ -196,15 +197,41 @@ export function DeployModal({ user, onClose, onDeployed }) {
         botName: name.trim(),
         description: desc.trim(),
         botType,
-        method,
-        phone: method === "code" ? phoneInput.replace(/[^0-9]/g, '') : undefined
       });
       const botId = data.bot.id;
+      botIdRef.current = botId;
 
-      // Deployment initiated successfully — close modal immediately
-      // so user can see bot card and copy the pairing code/QR from there
+      // Move to connecting step — keep modal open to show QR / pairing code
+      setStep("connecting");
+
+      // Notify parent so the bot list refreshes (bot is now in DB with "connecting" status)
       try { onDeployed(); } catch (e) {}
-      try { onClose(); } catch (e) {}
+
+      // Open SSE stream to receive QR, pairing-code, and status events
+      connectSse(botId, markConnected);
+
+      if (method === "qr") {
+        // Also poll HTTP endpoint as a fallback in case SSE is buffered
+        startPolling(botId);
+      } else if (method === "code") {
+        // Ask the backend to request a pairing code — response comes via SSE AND HTTP
+        const cleanPhone = phoneInput.replace(/[^0-9]/g, "");
+        botsApi.createPairingCode(botId, cleanPhone)
+          .then((resp) => {
+            if (resp.code) {
+              codeReceivedRef.current = true;
+              const codeStr = typeof resp.code === "string"
+                ? resp.code
+                : (resp.code?.code ?? null);
+              setPairCode(codeStr);
+              setPairExpiresAt(resp.expiresAt ?? null);
+              setConnectionStep("showing");
+            }
+          })
+          .catch((err) => {
+            setError(err.message || "Could not get pairing code. You can use QR code instead.");
+          });
+      }
 
     } catch (err) {
       setError(err.message);

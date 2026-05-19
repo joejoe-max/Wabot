@@ -200,6 +200,7 @@ export class BotInstance {
     this._pairingPhone         = null;  // Phone stored while waiting for socket readiness
     this._pairingCodeResolve   = null;  // Promise resolver for requestPairingCode callers
     this._pairingCodeReject    = null;  // Promise rejecter for requestPairingCode callers
+    this._pairingCodeInFlight  = false; // Guard against duplicate Baileys pairing code calls
 
     /* ── Group management in-memory state ─────────────────── */
     // Strike counts for moderation actions (anti-link/spam/vulgar)
@@ -248,6 +249,7 @@ export class BotInstance {
     if (this._destroyed) return;
     /* Reset pairing state for fresh connection cycle */
     this._socketReadyForPairing = false;
+    this._pairingCodeInFlight   = false;
     try {
       if (this.socket) {
         try { this.socket.end(undefined); } catch {}
@@ -475,8 +477,11 @@ export class BotInstance {
 
   /* ── Internal: call Baileys and emit the pairing code ───────── */
   async _doPairingCodeRequest() {
+    /* Guard against duplicate concurrent calls (e.g. re-emitted QR events) */
+    if (this._pairingCodeInFlight) return;
     const phone = this._pairingPhone;
     if (!phone || !this.socket?.requestPairingCode) return;
+    this._pairingCodeInFlight = true;
     try {
       logger.info({ botId: this.botId, phone }, "Requesting pairing code from Baileys");
       const code = await this.socket.requestPairingCode(phone);
@@ -487,6 +492,7 @@ export class BotInstance {
       /* Resolve the waiting promise (if any) */
       if (this._pairingCodeResolve) this._pairingCodeResolve(code);
     } catch (err) {
+      this._pairingCodeInFlight = false;
       logger.error({ err, botId: this.botId }, "Pairing code request failed");
       if (this._pairingCodeReject) {
         this._pairingCodeReject(err);
@@ -1423,7 +1429,10 @@ export class BotInstance {
     this._pendingUsage = { messagesThisMonth: 0, totalMessages: 0, lastActivity: null };
 
     const patch = {};
-    if (pending.messagesThisMonth) patch.messages_this_month = Math.max(0, this.config.messages_this_month ?? 0);
+    if (pending.messagesThisMonth) {
+      // Write the in-memory accumulated total (already updated per-message in _handleInbound)
+      patch.messages_this_month = Math.max(0, this.config.messages_this_month ?? 0);
+    }
     if (pending.lastActivity) patch.last_activity = pending.lastActivity;
 
     try {
